@@ -25,4 +25,5 @@ urlpatterns = [
     path('auth/', include('djoser.urls.jwt')),
     
     path('api/', include('RetrivalAPI.urls')),
+    
 ]

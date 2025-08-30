@@ -28,6 +28,41 @@ def enforce_character_placeholder(text):
 
 # Create your views here.
 @api_view(['POST'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def get_project_and_scenes(request):
+    """
+    Get details of a particular project and its scenes for the authenticated user.
+    Expects: { "project_id": ... }
+    """
+    try:
+        data = json.loads(request.body)
+        project_id = data.get('project_id')
+        if not project_id:
+            return Response({
+                "status": "error",
+                "message": "project_id is required."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        project = models.Project.objects.get(id=project_id, user=request.user)
+        project_serializer = serializers.ProjectSerializer(project)
+        return Response({
+            "status": "success",
+            "project": project_serializer.data,
+        })
+    except models.Project.DoesNotExist:
+        return Response({
+            "status": "error",
+            "message": "Project not found."
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({
+            "status": "error",
+            "message": f"Internal server error: {str(e)}"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+@api_view(['POST'])
+@authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def listProjects(request):
     projects = models.Project.objects.filter(user=request.user)

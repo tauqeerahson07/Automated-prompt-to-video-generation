@@ -12,4 +12,7 @@ urlpatterns = [
     
     # Project status endpoint
     path('project-status/<uuid:project_id>/', views.GetProjectStatus,name='project_status'),
+    
+    path('project/scenes/', views.get_project_and_scenes, name='get_project_and_scenes'),
+
 ]
