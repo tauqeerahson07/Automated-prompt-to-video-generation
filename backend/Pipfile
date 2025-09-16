@@ -7,6 +7,9 @@ name = "pypi"
 langchain = "*"
 langchain-core = "*"
 langgraph-checkpoint-postgres = "*"
+langgraph = "*"
+psycopg-pool = "*"
+psycopg = {extras = ["pool", "binary"], version = "*"}
 django = "==4.2.7"
 django-cors-headers = "==4.3.1"
 supabase = "==2.0.2"
@@ -20,9 +23,6 @@ django-storages = "==1.14.2"
 djangorestframework = ">=3.14.0"
 djoser = ">=2.2.0"
 djangorestframework-simplejwt = ">=5.3.0"
-langgraph = "*"
-psycopg-pool = "*"
-psycopg = {extras = ["pool", "binary"], version = "*"}
 
 [dev-packages]
 

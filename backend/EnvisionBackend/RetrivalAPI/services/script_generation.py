@@ -15,7 +15,7 @@ if not NEBIUS_API_KEY:
     raise ValueError("Nebius_key not found in environment variables")
 
 # Model to use
-LLAMA_MODEL = "Qwen/Qwen3-4B-fast"
+LLAMA_MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 
 # Define Scene structure
 class SceneData(TypedDict):

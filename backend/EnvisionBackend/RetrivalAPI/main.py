@@ -3,7 +3,7 @@ import os
 import requests
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
-from.services.checkpoints import checkpointer
+from .services.checkpoints import checkpointer
 from .services.script_generation import generate_script
 
 load_dotenv()
@@ -136,7 +136,6 @@ def node_rewrite_scene(state: "State") -> "State":
     import re
     import os
     import requests
-    from .services.script_generation import generate_script
 
     print("node_rewrite_scene called with state:", state)
 
@@ -212,7 +211,7 @@ Return ONLY the edited scene in this exact format:
 """
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         payload = {
-            "model": "Qwen/Qwen3-4B-fast",
+            "model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -335,21 +334,23 @@ def route_after_rewrite(state: dict) -> str:
 # ---------- Workflow Builder ----------
 def build_workflow(entry_point="generate_script"):
     g = StateGraph(State)
-    g.add_node("generate_script", node_generate_script)
+    if entry_point == "generate_script":
+        g.add_node("generate_script", node_generate_script)
     g.add_node("decide_rewrite", node_decide_rewrite)
     g.add_node("rewrite_scene", node_rewrite_scene)
     g.add_node("finalize_output", node_finalize_output)
 
     g.set_entry_point(entry_point)
-    g.add_edge("generate_script", "decide_rewrite")
+    if entry_point == "generate_script":
+        g.add_edge("generate_script", "decide_rewrite")
     g.add_conditional_edges(
-    "decide_rewrite",
-    route_after_decide,
-    {
-        "rewrite_scene": "rewrite_scene",
-        "finalize_output": "finalize_output"
-    },
-    )   
+        "decide_rewrite",
+        route_after_decide,
+        {
+            "rewrite_scene": "rewrite_scene",
+            "finalize_output": "finalize_output"
+        },
+    )
     g.add_conditional_edges(
         "rewrite_scene",
         route_after_rewrite,
