@@ -26,6 +26,14 @@ def enforce_character_placeholder(text):
     text = re.sub(r"\b(the )?character\b", r"{character}", text, flags=re.IGNORECASE)
     return text
 
+@api_view(['GET'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def getCharacters(request):
+    characters = models.Character.objects.all()
+    serializer = serializers.CharacterSerializer(characters, many=True)
+    return Response(serializer.data)
+
 # Create your views here.
 @api_view(['POST'])
 @authentication_classes([JWTAuthentication])
