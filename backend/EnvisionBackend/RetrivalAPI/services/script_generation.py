@@ -157,7 +157,7 @@ def extractScenes(script: str) -> List[SceneData]:
     return scenes
 
 
-def generate_script(concept: str,num_scenes: int = 5,creativity_level: str = 'balanced',previous_context: str = None) -> Dict[str, Any]:
+def generate_script(concept: str, num_scenes: int = 5, creativity_level: str = 'balanced', previous_context: str = None, trigger_word: str = None) -> Dict[str, Any]:
     try:
         if creativity_level == "factual":
             temperature = 0.5
@@ -174,28 +174,32 @@ def generate_script(concept: str,num_scenes: int = 5,creativity_level: str = 'ba
         if is_commercial:
             project_type = 'commercial'
 
+        # Use trigger_word if provided, otherwise use default placeholders
+        character_placeholder = trigger_word if trigger_word else "{character}"
+        product_placeholder = trigger_word if trigger_word else "{product}"
+
         # System prompt for single character stories or commercials
         if is_commercial:
-            system_prompt = """You are a creative director making commercials, adverts, or promos for products. Your task is to create scene summaries for a visual commercial, always using the {product} keyword instead of any real product name.
+            system_prompt = f"""You are a creative director making commercials, adverts, or promos for products. Your task is to create scene summaries for a visual commercial, always using the {product_placeholder} keyword instead of any real product name.
 
 🚨 CRITICAL RULES 🚨
-1. The commercial must focus on a single product, always referenced as {product}
-2. Use {product} in ALL scene summaries - NEVER use actual product names
+1. The commercial must focus on a single product, always referenced as {product_placeholder}
+2. Use {product_placeholder} in ALL scene summaries - NEVER use actual product names
 3. Focus on visual storytelling for advertising - show the product in action, benefits, emotions, and appeal
 4. No reference sheets or product details section
 5. Each scene should be cinematic and suitable for video generation
 
 ✅ SCENE FORMAT:
 **Scene #: "TITLE"**
-[Summary of what happens in the scene using {product} placeholder - focus on actions, emotions, and visual elements]
+[Summary of what happens in the scene using {product_placeholder} - focus on actions, emotions, and visual elements]
 """
             generation_prompt = f"""
 Create a visual commercial titled "{concept}" with exactly {num_scenes} scenes.
 
-Create exactly {num_scenes} scenes. Each scene should be a visual summary using {{product}} placeholder.
+Create exactly {num_scenes} scenes. Each scene should be a visual summary using {product_placeholder}.
 
 IMPORTANT RULES:
-- Use {{product}} instead of any actual product name
+- Use {product_placeholder} instead of any actual product name
 - Focus on visual actions, benefits, and emotions
 - Describe what can be seen in each scene
 - NO dialogue, just visual storytelling
@@ -209,26 +213,26 @@ IMPORTANT RULES:
                     + generation_prompt
                 )
         else:
-            system_prompt = """You are a master storyteller creating visual narratives for single character stories. Your task is to create scene summaries that will be used for image and video generation.
+            system_prompt = f"""You are a master storyteller creating visual narratives for single character stories. Your task is to create scene summaries that will be used for image and video generation.
 
 🚨 CRITICAL RULES 🚨
 1. Create stories with exactly ONE character
-2. Use {character} placeholder in ALL scene summaries - NEVER use actual character names
+2. Use {character_placeholder} in ALL scene summaries - NEVER use actual character names
 3. Focus on visual storytelling - describe what happens, not dialogue
 4. Keep scenes cinematic and suitable for video generation
 5. NO character reference sheets needed
 
 ✅ SCENE FORMAT:
 **Scene #: "TITLE"**
-[Summary of what happens in the scene using {character} placeholder - focus on actions, emotions, and visual elements]
+[Summary of what happens in the scene using {character_placeholder} - focus on actions, emotions, and visual elements]
 """
             generation_prompt = f"""
 Create a visual story titled "{concept}" with exactly {num_scenes} scenes.
 
-Create exactly {num_scenes} scenes. Each scene should be a visual summary using {{character}} placeholder.
+Create exactly {num_scenes} scenes. Each scene should be a visual summary using {character_placeholder}.
 
 IMPORTANT RULES:
-- Use {{character}} instead of any actual character name
+- Use {character_placeholder} instead of any actual character name
 - Focus on visual actions and emotions
 - Describe what can be seen in each scene
 - NO dialogue, just visual storytelling
@@ -237,12 +241,12 @@ IMPORTANT RULES:
 
 Format:
 **Scene 1: "Title of Scene"**  
-{{character}} [describe what the character is doing, feeling, or experiencing visually]. [Describe the environment, actions, and visual elements without using any actual character name].
+{character_placeholder} [describe what the character is doing, feeling, or experiencing visually]. [Describe the environment, actions, and visual elements without using any actual character name].
 
 **Scene 2: "Title of Scene"**  
-{{character}} [continue the story visually]...
+{character_placeholder} [continue the story visually]...
 
-Continue for all {num_scenes} scenes, maintaining visual continuity and using {{character}} placeholder throughout.
+Continue for all {num_scenes} scenes, maintaining visual continuity and using {character_placeholder} throughout.
 
 The story should be {description} and focus on the concept: {concept}
 """
@@ -283,7 +287,8 @@ The story should be {description} and focus on the concept: {concept}
                 "temperature": temperature,
                 "scene_details": scene_details,
                 "product_details": {},
-                "project_type": project_type
+                "project_type": project_type,
+                "trigger_word": trigger_word
             }
         else:
             return {
@@ -292,7 +297,8 @@ The story should be {description} and focus on the concept: {concept}
                 "scene_details": [],
                 "product_details": {},
                 "temperature": temperature,
-                "project_type": project_type
+                "project_type": project_type,
+                "trigger_word": trigger_word
             }
 
     except Exception as e:
@@ -302,9 +308,10 @@ The story should be {description} and focus on the concept: {concept}
             "character_details": {},
             "scene_details": [],
             "product_details": {},
-            "project_type": project_type
+            "project_type": project_type,
+            "trigger_word": trigger_word
         }
-
+        
 def detect_project_type(concept: str) -> str:
     """
     Infer if the project is a 'story' or 'commercial' based on concept and script content.

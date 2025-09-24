@@ -57,10 +57,11 @@ def node_generate_script(state: State) -> State:
     concept = state["concept"]
     num_scenes = state["num_scenes"]
     creativity = state["creativity"]
+    trigger_word = state.get("trigger_word")
 
     print("🎬 Generating script...")
     try:
-        res = generate_script(concept, num_scenes, creativity)
+        res = generate_script(concept, num_scenes, creativity, trigger_word=trigger_word)
         
         state["script"] = res["script"]
         state["scenes"] = res["scene_details"]

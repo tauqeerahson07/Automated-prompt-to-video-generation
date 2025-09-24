@@ -3,6 +3,8 @@ from . import views
 
 urlpatterns = [
     path('get-all-characters/', views.getCharacters, name='get_all_characters'),
+    # get scenes
+    path('generate-scenes/', views.generateScenes, name='generate_scenes'),
     # Project management endpoints
     path('list-projects/', views.listProjects, name='list_projects'),
     path('create-project/', views.CreateProject, name='create_project'),

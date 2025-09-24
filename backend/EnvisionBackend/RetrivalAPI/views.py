@@ -34,6 +34,140 @@ def getCharacters(request):
     serializer = serializers.CharacterSerializer(characters, many=True)
     return Response(serializer.data)
 
+@api_view(['POST'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def generateScenes(request):
+    """
+    Generate scenes using existing script generation workflow
+    Expects: { "trigger_word": "merida", "num_scenes": 3, "prompt": "a man walking in a deep dark jungle" }
+    """
+    try:
+        data = json.loads(request.body)
+        trigger_word = data.get('trigger_word', '').strip()
+        num_scenes = data.get('num_scenes', 3)
+        prompt = data.get('prompt', '').strip()
+        
+        # Validate input
+        if not trigger_word or not prompt:
+            return Response({
+                "status": "error",
+                "message": "trigger_word and prompt are required.",
+                "error_code": "missing_required_fields"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            num_scenes = int(num_scenes)
+            if num_scenes < 1 or num_scenes > 7:
+                num_scenes = 3
+        except (ValueError, TypeError):
+            num_scenes = 3
+
+        # Use the prompt as concept for script generation
+        concept = prompt
+        project_title = f"Generated from: {prompt[:50]}..."
+        
+        # Create project using existing logic
+        project, created = models.Project.objects.get_or_create(
+            user=request.user,
+            concept=concept,
+            defaults={
+                "num_scenes": num_scenes,
+                "creativity_level": "balanced",
+                "title": project_title,
+                "project_type": detect_project_type(concept)
+            }
+        )
+        
+        if not created:
+            project.num_scenes = num_scenes
+            project.title = project_title
+            project.save()
+            project.scenes.all().delete()
+
+        # Initialize state for workflow with trigger_word
+        init_state = {
+            "concept": concept,
+            "num_scenes": num_scenes,
+            "creativity": "balanced",
+            "script": "",
+            "scenes": [],
+            "project_title": project_title,
+            "project_type": detect_project_type(concept),
+            "trigger_word": trigger_word  # Add trigger_word to init_state
+        }
+
+        # Run existing script generation workflow
+        app = build_workflow()
+        thread_id = f"user-{request.user.id}-{project.id}"  
+        config = {"configurable": {"thread_id": thread_id}} 
+        state_after_script = app.invoke(init_state, config=config, interrupt_before="decide_rewrite")
+        
+        if state_after_script is None:
+            return Response({
+                "status": "error",
+                "message": "Script generation failed. Please try again.",
+                "error_code": "script_generation_failed"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+        # Create scenes in database
+        created_scenes = []
+        for scene_data in state_after_script.get("scenes", []):
+            scene_title = scene_data.get("title", f"Scene {scene_data.get('scene_number', 1)}")
+            scene = models.Scene.objects.create(
+                project=project,
+                scene_number=scene_data.get("scene_number", 1),
+                script=scene_data.get("script", ""),
+                story_context=scene_data.get("story", ""),
+                title=scene_title
+            )
+            
+            # Prepare scene data - the script should already contain the trigger_word
+            scene_prompt = scene.story_context or scene.script
+            
+            created_scenes.append({
+                "scene_number": scene.scene_number,
+                "scene_title": scene.title,
+                "final_prompt": scene_prompt,
+                "trigger_word": trigger_word
+            })
+
+        # Check if character exists
+        character = None
+        try:
+            character = models.Character.objects.get(trigger_word=trigger_word)
+        except models.Character.DoesNotExist:
+            pass
+
+        return Response({
+            "status": "success",
+            "message": f"Generated {len(created_scenes)} scenes from script generation workflow.",
+            "data": {
+                "project_id": str(project.id),
+                "project_title": project.title,
+                "original_prompt": prompt,
+                "trigger_word": trigger_word,
+                "character_exists": character is not None,
+                "character_name": character.name if character else None,
+                "total_scenes": len(created_scenes),
+                "scenes": created_scenes
+            }
+        }, status=status.HTTP_200_OK)
+
+    except json.JSONDecodeError:
+        return Response({
+            "status": "error",
+            "message": "Invalid JSON format in request body.",
+            "error_code": "invalid_json"
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    except Exception as e:
+        return Response({
+            "status": "error",
+            "message": f"Internal server error: {str(e)}",
+            "error_code": "internal_error"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 # Create your views here.
 @api_view(['POST'])
 @authentication_classes([JWTAuthentication])
@@ -443,3 +577,5 @@ def GetProjectStatus(request, project_id):
             {"error": f"Internal server error: {str(e)}"}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+        
+        
