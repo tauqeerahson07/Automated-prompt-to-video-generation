@@ -12,6 +12,7 @@ import re
 from .services.checkpoints import checkpointer
 from . import models, serializers
 from .services.script_generation import detect_project_type
+from .services.image_prompt_generation import ImagePromptGenerator
 from .main import build_workflow
 from dotenv import load_dotenv
 from .models import WorkflowCheckpoint
@@ -75,13 +76,15 @@ def generateScenes(request):
                 "num_scenes": num_scenes,
                 "creativity_level": "balanced",
                 "title": project_title,
-                "project_type": detect_project_type(concept)
+                "project_type": detect_project_type(concept),
+                "trigger_word": trigger_word
             }
         )
         
         if not created:
             project.num_scenes = num_scenes
             project.title = project_title
+            project.trigger_word = trigger_word
             project.save()
             project.scenes.all().delete()
 
@@ -138,7 +141,8 @@ def generateScenes(request):
             character = models.Character.objects.get(trigger_word=trigger_word)
         except models.Character.DoesNotExist:
             pass
-
+        
+        WorkflowCheckpoint.objects.filter(thread_id=thread_id).delete()
         return Response({
             "status": "success",
             "message": f"Generated {len(created_scenes)} scenes from script generation workflow.",
@@ -168,6 +172,100 @@ def generateScenes(request):
             "error_code": "internal_error"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
+        
+
+@api_view(['POST'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def generate_image_prompts(request):
+    """
+    API endpoint to generate image prompts from scenes data
+    
+    Expects: { "project_id": "..." }
+    Retrieves scenes from database and generates image prompts
+    """
+    try:
+        data = json.loads(request.body)
+        
+        if not data:
+            return Response({
+                "error": "Request body is required",
+                "success": False
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        project_id = data.get('project_id')
+        
+        if not project_id:
+            return Response({
+                "error": "project_id is required",
+                "success": False
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get project and verify ownership
+        try:
+            project = models.Project.objects.get(id=project_id, user=request.user)
+        except models.Project.DoesNotExist:
+            return Response({
+                "error": "Project not found or access denied",
+                "success": False
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        
+        # Get all scenes for this project
+        scenes = models.Scene.objects.filter(project=project).order_by('scene_number')
+        
+        if not scenes.exists():
+            return Response({
+                "error": "No scenes found for this project",
+                "success": False
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        
+        trigger_word = project.trigger_word or data.get('trigger_word', '')
+        
+        # Prepare scenes data in the format expected by ImagePromptGenerator
+        scenes_data = []
+        for scene in scenes:
+            scene_prompt = scene.story_context or scene.script
+            scenes_data.append({
+                "scene_number": scene.scene_number,
+                "scene_title": scene.title,
+                "final_prompt": scene_prompt,
+                "trigger_word": trigger_word
+            })
+        
+        # Format data as complete API response structure
+        formatted_data = {
+            "status": "success",
+            "data": {
+                "project_id": str(project.id),
+                "project_title": project.title,
+                "original_prompt": project.concept,
+                "trigger_word": trigger_word,
+                "total_scenes": len(scenes_data),
+                "scenes": scenes_data
+            }
+        }
+        
+        # Generate image prompts using the formatted data
+        generator = ImagePromptGenerator()  # Create instance
+        result = generator.generate_image_prompt(formatted_data)
+        
+        if result.get("success", False):
+            return Response(result, status=status.HTTP_200_OK)
+        else:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+            
+    except json.JSONDecodeError:
+        return Response({
+            "error": "Invalid JSON format in request body",
+            "success": False
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({
+            "error": f"Internal server error: {str(e)}",
+            "success": False
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 # Create your views here.
 @api_view(['POST'])
 @authentication_classes([JWTAuthentication])

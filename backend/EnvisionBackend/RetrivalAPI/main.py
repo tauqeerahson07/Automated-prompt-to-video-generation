@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
 from .services.checkpoints import checkpointer
 from .services.script_generation import generate_script
+from .services.image_prompt_generation import ImagePromptGenerator
 from .models import WorkflowCheckpoint
 
 load_dotenv()
@@ -314,6 +315,71 @@ def node_rewrite_scene(state: "State") -> "State":
         print("node_rewrite_scene returning error state:", state)
         return state
 
+def node_generate_image_prompts(state: State) -> State:
+    """Generate image prompts from the finalized scenes."""
+    try:
+        scenes = state.get("scenes", [])
+        if not scenes:
+            state["error"] = "No scenes available for image prompt generation"
+            return state
+        
+        print("🎨 Generating image prompts...")
+        
+        # Prepare scenes data in the format expected by ImagePromptGenerator
+        scenes_data = []
+        for scene in scenes:
+            scene_prompt = scene.get("story_context") or scene.get("story") or scene.get("script", "")
+            scenes_data.append({
+                "scene_number": scene.get("scene_number", 1),
+                "scene_title": scene.get("title", f"Scene {scene.get('scene_number', 1)}"),
+                "final_prompt": scene_prompt,
+                "trigger_word": state.get("trigger_word", "")
+            })
+        
+        # Format data as expected by ImagePromptGenerator
+        formatted_data = {
+            "status": "success",
+            "data": {
+                "project_id": state.get("project_id", "workflow_generated"),
+                "project_title": state.get("project_title", "Generated Project"),
+                "original_prompt": state.get("concept", ""),
+                "trigger_word": state.get("trigger_word", ""),
+                "total_scenes": len(scenes_data),
+                "scenes": scenes_data
+            }
+        }
+        
+        # Generate image prompts
+        result = ImagePromptGenerator.generate_image_prompt(formatted_data)
+        
+        if result.get("success", False):
+            state["image_prompts"] = result.get("data", {})
+            print("✅ Image prompts generated successfully!")
+            
+            # Display generated prompts
+            image_prompts_data = result.get("data", {})
+            scenes_with_prompts = image_prompts_data.get("scenes", [])
+            
+            print(f"\n🖼️ Generated Image Prompts ({len(scenes_with_prompts)} scenes):")
+            for scene_prompt in scenes_with_prompts:
+                scene_num = scene_prompt.get("scene_number", "Unknown")
+                scene_title = scene_prompt.get("scene_title", "Untitled")
+                image_prompt = scene_prompt.get("image_prompt", "No prompt generated")
+                
+                print(f"  • Scene {scene_num}: {scene_title}")
+                print(f"    Image Prompt: {image_prompt[:100]}{'...' if len(image_prompt) > 100 else ''}")
+                
+        else:
+            error_msg = result.get("error", "Unknown error in image prompt generation")
+            state["error"] = f"Image prompt generation failed: {error_msg}"
+            print(f"❌ Image prompt generation failed: {error_msg}")
+            
+    except Exception as e:
+        error_msg = f"Error in image prompt generation: {str(e)}"
+        state["error"] = error_msg
+        print(f"❌ {error_msg}")
+        
+    return state
 
 def node_finalize_output(state: State) -> State:
     """Finalize and present the complete output."""
@@ -334,20 +400,33 @@ def node_finalize_output(state: State) -> State:
     return state
 
 # ---------- Routing Functions ----------
+# def route_after_decide(state: dict) -> str:
+#     # Route to rewrite_scene if needs_rewrite is True, else finalize_output
+#     if state.get("needs_rewrite", False):
+#         return "rewrite_scene"
+#     else:
+#         return "finalize_output"
+
+# def route_after_rewrite(state: dict) -> str:
+#     # After rewriting, if needs_rewrite is still True, allow more edits, else finalize
+#     if state.get("needs_rewrite", False):
+#         return "decide_rewrite"
+#     else:
+#         return "finalize_output"
+
 def route_after_decide(state: dict) -> str:
-    # Route to rewrite_scene if needs_rewrite is True, else finalize_output
+    # Route to rewrite_scene if needs_rewrite is True, else generate image prompts
     if state.get("needs_rewrite", False):
         return "rewrite_scene"
     else:
-        return "finalize_output"
+        return "generate_image_prompts"
 
 def route_after_rewrite(state: dict) -> str:
-    # After rewriting, if needs_rewrite is still True, allow more edits, else finalize
+    # After rewriting, if needs_rewrite is still True, allow more edits, else generate image prompts
     if state.get("needs_rewrite", False):
         return "decide_rewrite"
     else:
-        return "finalize_output"
-
+        return "generate_image_prompts"
 # ---------- Workflow Builder ----------
 def build_workflow(entry_point="generate_script"):
     g = StateGraph(State)
@@ -355,6 +434,7 @@ def build_workflow(entry_point="generate_script"):
         g.add_node("generate_script", node_generate_script)
     g.add_node("decide_rewrite", node_decide_rewrite)
     g.add_node("rewrite_scene", node_rewrite_scene)
+    g.add_node("generate_image_prompts", node_generate_image_prompts)
     g.add_node("finalize_output", node_finalize_output)
 
     g.set_entry_point(entry_point)
@@ -365,7 +445,7 @@ def build_workflow(entry_point="generate_script"):
         route_after_decide,
         {
             "rewrite_scene": "rewrite_scene",
-            "finalize_output": "finalize_output"
+            "generate_image_prompts": "generate_image_prompts"
         },
     )
     g.add_conditional_edges(
@@ -373,9 +453,10 @@ def build_workflow(entry_point="generate_script"):
         route_after_rewrite,
         {
             "decide_rewrite": "decide_rewrite",
-            "finalize_output": "finalize_output"
+            "generate_image_prompts": "generate_image_prompts"
         },
     )
+    g.add_edge("generate_image_prompts", "finalize_output")
     g.add_edge("finalize_output", END)
 
     return g.compile(checkpointer=checkpointer)

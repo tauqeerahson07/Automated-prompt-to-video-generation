@@ -5,6 +5,8 @@ urlpatterns = [
     path('get-all-characters/', views.getCharacters, name='get_all_characters'),
     # get scenes
     path('generate-scenes/', views.generateScenes, name='generate_scenes'),
+    
+    path('generate-image-prompts/', views.generate_image_prompts, name='generate_image_prompts'),
     # Project management endpoints
     path('list-projects/', views.listProjects, name='list_projects'),
     path('create-project/', views.CreateProject, name='create_project'),

@@ -40,6 +40,7 @@ class Project(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='projects')
     title = models.CharField(max_length=255)
     concept = models.TextField()
+    trigger_word = models.CharField(max_length=100, blank=True, null=True)
     num_scenes = models.IntegerField()
     creativity_level = models.CharField(
         max_length=20,
