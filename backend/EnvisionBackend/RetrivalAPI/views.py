@@ -143,7 +143,7 @@ def generateScenes(request):
             "status": "success",
             "message": f"Generated {len(created_scenes)} scenes from script generation workflow.",
             "data": {
-                "project_id": str(project.id),
+                # "project_id": str(project.id),
                 "project_title": project.title,
                 "original_prompt": prompt,
                 "trigger_word": trigger_word,
