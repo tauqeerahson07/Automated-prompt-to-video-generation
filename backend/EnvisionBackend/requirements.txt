@@ -13,6 +13,6 @@ langgraph==0.2.55
 langchain==0.3.8
 langchain-core==0.3.21
 langchain-community==0.3.8
-Pillow==10.0.1
+Pillow==10.4.0
 django-storages==1.14.2
 boto3==1.34.0
