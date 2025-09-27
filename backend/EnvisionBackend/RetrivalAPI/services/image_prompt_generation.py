@@ -182,10 +182,16 @@ Create a complete, cinematic image prompt that includes all styling elements nat
                 llm_response = re.sub(r'Here is.*?prompt:', '', llm_response, flags=re.IGNORECASE)
                 llm_response = re.sub(r'This prompt.*$', '', llm_response, flags=re.DOTALL)
                 
+                # Remove quotes at beginning and end
                 llm_response = llm_response.strip('"\'')
                 
-                # Remove escape characters
-                llm_response = llm_response.replace('\\"', '"').replace("\\'", "'")
+                # Remove ALL escape characters (THIS IS THE KEY FIX)
+                llm_response = llm_response.replace('\\"', '"')
+                llm_response = llm_response.replace("\\'", "'")
+                llm_response = llm_response.replace('\\n', ' ')
+                llm_response = llm_response.replace('\\t', ' ')
+                llm_response = llm_response.replace('\\r', ' ')
+                llm_response = llm_response.replace('\\\\', '\\')
                 
                 # Clean up extra whitespace
                 llm_response = ' '.join(llm_response.split())
