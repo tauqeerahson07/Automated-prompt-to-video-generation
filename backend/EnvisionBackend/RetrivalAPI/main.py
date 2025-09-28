@@ -142,6 +142,32 @@ def node_decide_rewrite(state: State) -> State:
 
 def node_rewrite_scene(state: "State") -> "State":
     """
+    Rewrites the selected scene(s) and regenerates subsequent scenes.
+    Can handle single scene edit or all scenes edit based on state flags.
+    """
+    import re
+    import os
+    import requests
+
+    print("node_rewrite_scene called with state:", state)
+    try:
+        # Check if we're editing all scenes
+        edit_all_scenes = state.get("edit_all_scenes", False)
+        
+        if edit_all_scenes:
+            return rewrite_all_scenes(state)
+        else:
+            return rewrite_single_scene(state)
+            
+    except Exception as e:
+        state["error"] = f"An unexpected error occurred during rewrite: {e}"
+        state["scene_to_edit"] = None
+        state["needs_rewrite"] = False
+        cleanup_checkpoints(state)  
+        return state
+
+def rewrite_single_scene(state: "State") -> "State":
+    """
     Rewrites the selected scene and regenerates subsequent scenes.
     """
     import re
@@ -181,12 +207,16 @@ def node_rewrite_scene(state: "State") -> "State":
                 state["needs_rewrite"] = False
                 state["error"] = "Nebius API not configured."
                 return state
-    
+            
+            trigger_word = state.get("trigger_word", "")
+            
             # 1. Rewrite the selected scene using LLM
-            system_prompt = """
-    You are a master storyteller and expert scene editor. Your job is to make scene edits that OBEY the user's EDIT REQUEST, even if it means changing the setting, weather, or time of day. 
-    You MUST prioritize the EDIT REQUEST over the original context. If the edit request requires a new setting, change it completely.
-    """
+            system_prompt = f"""
+You are a master storyteller and expert scene editor. Your job is to make scene edits that OBEY the user's EDIT REQUEST, even if it means changing the setting, weather, or time of day. 
+You MUST prioritize the EDIT REQUEST over the original context. If the edit request requires a new setting, change it completely.
+
+IMPORTANT: Always use the character name "{trigger_word}" (exactly as written) in your scenes instead of placeholders.
+"""
             context_scenes = []
             for scene in state.get("scenes", []):
                 if scene["scene_number"] == target:
@@ -196,30 +226,32 @@ def node_rewrite_scene(state: "State") -> "State":
             context = "\n\n".join(context_scenes)
     
             user_prompt = f"""
-    🚨 WARNING: If you do not change the scene according to the EDIT REQUEST, your output will be rejected.
-    
-    STORY CONCEPT: "{state['concept']}"
-    EDIT REQUEST: "{user_notes}"
-    
-    CURRENT STORY CONTEXT:
-    {context}
-    
-    Your task:
-    - You MUST rewrite Scene {target} so that it reflects the edit request above.
-    - The new scene should CLEARLY show the changes described in the edit request, even if it means changing the setting, weather, or time of day.
-    - Do NOT simply repeat the previous scene. Make the changes OBVIOUS and VISIBLE.
-    - If the edit request says "character is walking on beautiful sunny morning day", the scene MUST be set in a sunny morning, NOT a forest or rainy setting, unless the user specifically requests a forest.
-    
-    IMPORTANT REQUIREMENTS:
-    - Keep using {{character}} placeholder (never use actual character names)
-    - Ensure the edited scene flows naturally from the previous scene
-    - Make sure the edited scene sets up the next scene appropriately
-    - Maintain the visual storytelling approach
-    
-    Return ONLY the edited scene in this exact format:
-    **Scene {target}: "Title"**
-    [Scene content using {{character}} placeholder]
-    """
+🚨 WARNING: If you do not change the scene according to the EDIT REQUEST, your output will be rejected.
+
+STORY CONCEPT: "{state['concept']}"
+EDIT REQUEST: "{user_notes}"
+CHARACTER NAME: "{trigger_word}" (use this exact name, not placeholders)
+
+CURRENT STORY CONTEXT:
+{context}
+
+Your task:
+- You MUST rewrite Scene {target} so that it reflects the edit request above.
+- The new scene should CLEARLY show the changes described in the edit request, even if it means changing the setting, weather, or time of day.
+- Do NOT simply repeat the previous scene. Make the changes OBVIOUS and VISIBLE.
+- If the edit request says "character is walking on beautiful sunny morning day", the scene MUST be set in a sunny morning, NOT a forest or rainy setting, unless the user specifically requests a forest.
+
+IMPORTANT REQUIREMENTS:
+- Use the character name "{trigger_word}" (exactly as written) throughout the scene
+- DO NOT use {{{{character}}}} or any placeholders - use the actual name "{trigger_word}"
+- Ensure the edited scene flows naturally from the previous scene
+- Make sure the edited scene sets up the next scene appropriately
+- Maintain the visual storytelling approach
+
+Return ONLY the edited scene in this exact format:
+**Scene {target}: "Title"**
+[Scene content using the character name "{trigger_word}"]
+"""
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
             payload = {
                 "model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
@@ -267,7 +299,8 @@ def node_rewrite_scene(state: "State") -> "State":
                         state["concept"],
                         1,
                         state.get("creativity", "balanced"),
-                        previous_context=last_context
+                        previous_context=last_context,
+                        trigger_word=trigger_word
                     )
                     if not regen_result or not regen_result.get("scene_details"):
                         state["error"] = "Scene regeneration failed."
@@ -315,6 +348,162 @@ def node_rewrite_scene(state: "State") -> "State":
         print("node_rewrite_scene returning error state:", state)
         return state
 
+def rewrite_all_scenes(state: "State") -> "State":
+    """New function to rewrite all scenes coherently"""
+    import re
+    import os
+    import requests
+    
+    try:
+        scenes = state.get("scenes", [])
+        if not scenes:
+            state["error"] = "No scenes found to edit."
+            state["needs_rewrite"] = False
+            return state
+
+        user_notes = state.get("rewrite_instructions", "").strip()
+        if not user_notes:
+            state["error"] = "No rewrite instructions provided."
+            state["needs_rewrite"] = False
+            return state
+
+        api_key = os.getenv("NEBIUS_API_KEY")
+        api_base = os.getenv("NEBIUS_API_BASE")
+        if not api_key or not api_base:
+            state["error"] = "Nebius API not configured."
+            state["needs_rewrite"] = False
+            return state
+        
+        trigger_word = state.get("trigger_word", "")
+        
+        print(f"Rewriting all {len(scenes)} scenes with instructions: {user_notes}")
+        
+        # Prepare context of all current scenes
+        current_story_context = []
+        for scene in scenes:
+            current_story_context.append(
+                f"**Scene {scene['scene_number']}: \"{scene['title']}\"**\n{scene['story']}"
+            )
+        context = "\n\n".join(current_story_context)
+
+        # System prompt for rewriting all scenes
+        system_prompt = f"""
+You are a master storyteller and expert script editor. Your job is to rewrite ALL scenes in the story to incorporate the user's edit request while maintaining narrative coherence.
+
+IMPORTANT RULES:
+1. You MUST apply the edit request to ALL scenes, not just one
+2. Always use the character name "{trigger_word}" (exactly as written) instead of placeholders
+3. Maintain story flow and coherence between scenes
+4. Make the changes OBVIOUS and VISIBLE in all scenes
+5. Each scene should clearly reflect the edit request while building upon the previous scene
+
+The edit request should transform the ENTIRE story, not just individual scenes.
+"""
+
+        # User prompt for all scenes rewrite
+        user_prompt = f"""
+🚨 CRITICAL: Rewrite ALL scenes to incorporate the edit request. Do not leave any scene unchanged.
+
+STORY CONCEPT: "{state['concept']}"
+EDIT REQUEST FOR ALL SCENES: "{user_notes}"
+CHARACTER NAME: "{trigger_word}" (use this exact name, not placeholders)
+
+CURRENT STORY (ALL SCENES):
+{context}
+
+Your task:
+- Rewrite ALL {len(scenes)} scenes to incorporate the edit request
+- Each scene must clearly show the changes described in the edit request
+- Maintain narrative flow between scenes
+- If edit request changes setting/weather/time, apply it to ALL scenes consistently
+- Make sure each scene builds upon the previous one naturally
+
+IMPORTANT REQUIREMENTS:
+- Use the character name "{trigger_word}" throughout all scenes
+- DO NOT use {{{{character}}}} or any placeholders
+- Return ALL scenes, even if slightly modified
+- Ensure visual storytelling approach for each scene
+
+Return all scenes in this exact format:
+**Scene 1: "Title"**
+[Scene 1 content using character name "{trigger_word}"]
+
+**Scene 2: "Title"**  
+[Scene 2 content using character name "{trigger_word}"]
+
+[Continue for all scenes...]
+"""
+
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        payload = {
+            "model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": state.get('temperature', 1),
+            "max_tokens": 3000,  # Increased for multiple scenes
+        }
+
+        resp = requests.post(f"{api_base}/chat/completions", headers=headers, json=payload)
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+
+        print("LLM Response for all scenes rewrite:")
+        print(content[:500] + "..." if len(content) > 500 else content)
+
+        # Parse all scenes from the response
+        scene_pattern = r'\*\*Scene\s+(\d+):\s*"?([^"\n]+?)"?\*\*\s*(.*?)(?=\*\*Scene|\Z)'
+        matches = re.findall(scene_pattern, content, re.DOTALL | re.IGNORECASE)
+
+        if not matches:
+            state["error"] = "Could not parse any rewritten scenes from LLM response."
+            state["needs_rewrite"] = False
+            return state
+
+        print(f"Found {len(matches)} scenes in LLM response")
+
+        # Update all scenes with new content
+        scene_map = {s["scene_number"]: s for s in scenes}
+
+        for match in matches:
+            scene_num = int(match[0])
+            new_title = match[1].strip()
+            new_content = match[2].strip()
+
+            if scene_num in scene_map:
+                # Update existing scene
+                scene_map[scene_num]["title"] = new_title
+                scene_map[scene_num]["story"] = new_content
+                scene_map[scene_num]["script"] = new_content
+                scene_map[scene_num]["story_context"] = new_content
+                print(f"Updated scene {scene_num}: {new_title}")
+            else:
+                print(f"Warning: Scene {scene_num} not found in original scenes")
+
+        # Rebuild scenes list in order
+        state["scenes"] = [scene_map[sn] for sn in sorted(scene_map.keys())]
+        
+        # Update script
+        state["script"] = "\n\n".join(
+            f"**Scene {scene['scene_number']}: \"{scene['title']}\"**\n{scene['story']}"
+            for scene in state["scenes"]
+        )
+
+        # Reset rewrite flags
+        state["edit_all_scenes"] = False
+        state["needs_rewrite"] = False
+        state.pop("scene_to_edit", None)
+        
+        print(f"Successfully rewrote all {len(state['scenes'])} scenes")
+        return state
+
+    except Exception as e:
+        state["error"] = f"Error in all scenes rewrite: {e}"
+        state["needs_rewrite"] = False
+        state["edit_all_scenes"] = False
+        return state
+    
 def node_generate_image_prompts(state: State) -> State:
     """Generate image prompts from the finalized scenes."""
     try:
@@ -350,7 +539,8 @@ def node_generate_image_prompts(state: State) -> State:
         }
         
         # Generate image prompts
-        result = ImagePromptGenerator.generate_image_prompt(formatted_data)
+        generator = ImagePromptGenerator()
+        result = generator.generate_image_prompt(formatted_data)
         
         if result.get("success", False):
             state["image_prompts"] = result.get("data", {})
@@ -400,20 +590,6 @@ def node_finalize_output(state: State) -> State:
     return state
 
 # ---------- Routing Functions ----------
-# def route_after_decide(state: dict) -> str:
-#     # Route to rewrite_scene if needs_rewrite is True, else finalize_output
-#     if state.get("needs_rewrite", False):
-#         return "rewrite_scene"
-#     else:
-#         return "finalize_output"
-
-# def route_after_rewrite(state: dict) -> str:
-#     # After rewriting, if needs_rewrite is still True, allow more edits, else finalize
-#     if state.get("needs_rewrite", False):
-#         return "decide_rewrite"
-#     else:
-#         return "finalize_output"
-
 def route_after_decide(state: dict) -> str:
     # Route to rewrite_scene if needs_rewrite is True, else generate image prompts
     if state.get("needs_rewrite", False):
@@ -422,11 +598,10 @@ def route_after_decide(state: dict) -> str:
         return "generate_image_prompts"
 
 def route_after_rewrite(state: dict) -> str:
-    # After rewriting, if needs_rewrite is still True, allow more edits, else generate image prompts
     if state.get("needs_rewrite", False):
         return "decide_rewrite"
     else:
-        return "generate_image_prompts"
+        return "decide_rewrite"
 # ---------- Workflow Builder ----------
 def build_workflow(entry_point="generate_script"):
     g = StateGraph(State)

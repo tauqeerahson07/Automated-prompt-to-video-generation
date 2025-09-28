@@ -25,6 +25,7 @@ djoser = ">=2.2.0"
 djangorestframework-simplejwt = ">=5.3.0"
 pillow = "*"
 rest-framework-simplejwt = "*"
+whitenoise = "*"
 
 [dev-packages]
 

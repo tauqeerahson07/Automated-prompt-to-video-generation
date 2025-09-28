@@ -14,6 +14,7 @@ urlpatterns = [
     # Script review and editing endpoints
     path('review-script/', views.ReviewScript, name='review_script'),
     path('edit-scene/', views.EditScene, name='edit_scene'),
+    path('edit-all-scenes/', views.EditAllScenes, name='edit_all_scenes'),
     
     # Project status endpoint
     path('project-status/<uuid:project_id>/', views.GetProjectStatus,name='project_status'),
