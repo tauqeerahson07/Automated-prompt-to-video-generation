@@ -66,7 +66,7 @@ def generateScenes(request):
 
         # Use the prompt as concept for script generation
         concept = prompt
-        project_title = f"Generated from: {prompt[:50]}..."
+        project_title = f"Generated from: {prompt}..."
         
         # Create project using existing logic
         project, created = models.Project.objects.get_or_create(
