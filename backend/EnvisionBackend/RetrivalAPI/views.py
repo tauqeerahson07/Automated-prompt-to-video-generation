@@ -133,6 +133,7 @@ def generateScenes(request):
         if character is None:
             return error_response
         
+        # Use character's trigger_word if not provided in request
         trigger_word = character.trigger_word or data.get('trigger_word', '').strip()
 
         try:
