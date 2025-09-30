@@ -19,13 +19,39 @@ from .models import WorkflowCheckpoint
 import os
 
 load_dotenv()
-
+################# Helper Functions #################
 def enforce_character_placeholder(text):
     # Replace "the character's" or "character’s" with "{character}'s"
     text = re.sub(r"\b(the )?character[’']s\b", r"{character}'s", text, flags=re.IGNORECASE)
     # Replace "the character" or "character" with "{character}"
     text = re.sub(r"\b(the )?character\b", r"{character}", text, flags=re.IGNORECASE)
     return text
+
+def get_user_selected_character(request):
+    """Get the user's selected character trigger_word from session"""
+    return request.session.get('selected_character', '')
+
+def validate_character_selection(request):
+    """Validate that user has selected a character"""
+    selected_character = get_user_selected_character(request)
+    if not selected_character:
+        return None, Response({
+            "status": "error",
+            "message": "No character selected. Please call setCharacter first.",
+            "error_code": "no_character_selected"
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        character = models.Character.objects.get(trigger_word=selected_character)
+        return character, None
+    except models.Character.DoesNotExist:
+        # Clear invalid selection
+        request.session.pop('selected_character', None)
+        return None, Response({
+            "status": "error",
+            "message": "Previously selected character no longer exists. Please select a character again.",
+            "error_code": "invalid_character_selection"
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
 @authentication_classes([JWTAuthentication])
@@ -38,6 +64,62 @@ def getCharacters(request):
 @api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
+def setCharacter(request):
+    """
+    Set or update character for the user
+    Expects: { "trigger_word": "merida"}
+    """
+    try:
+        data = json.loads(request.body)
+        trigger_word = data.get('trigger_word', '').strip()
+
+        if not trigger_word:
+            return Response({
+                "status": "error",
+                "message": "trigger_word is required.",
+                "error_code": "trigger_word_required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            character = models.Character.objects.get(trigger_word=trigger_word)
+            
+            # Store the selected character in session for persistence
+            request.session['selected_character'] = trigger_word
+            request.session.save()
+            
+            return Response({
+                "status": "success",
+                "message": f"Character '{character.name}' with trigger_word '{trigger_word}' selected successfully.",
+                "data": {
+                    "character": serializers.CharacterSerializer(character).data
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except models.Character.DoesNotExist:
+            return Response({
+                "status": "error",
+                "message": f"Character with trigger_word '{trigger_word}' does not exist.",
+                "error_code": "character_not_found"
+            }, status=status.HTTP_404_NOT_FOUND)
+            
+    except json.JSONDecodeError:
+        return Response({
+            "status": "error",
+            "message": "Invalid JSON format in request body.",
+            "error_code": "invalid_json"
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        import traceback
+        print("Exception in setCharacter:", traceback.format_exc())
+        return Response({
+            "status": "error",
+            "message": f"Internal server error: {str(e)}",
+            "error_code": "internal_error"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+@api_view(['POST'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def generateScenes(request):
     """
     Generate scenes using existing script generation workflow
@@ -45,17 +127,13 @@ def generateScenes(request):
     """
     try:
         data = json.loads(request.body)
-        trigger_word = data.get('trigger_word', '').strip()
         num_scenes = data.get('num_scenes', 3)
         prompt = data.get('prompt', '').strip()
+        character, error_response = validate_character_selection(request)
+        if character is None:
+            return error_response
         
-        # Validate input
-        if not trigger_word or not prompt:
-            return Response({
-                "status": "error",
-                "message": "trigger_word and prompt are required.",
-                "error_code": "missing_required_fields"
-            }, status=status.HTTP_400_BAD_REQUEST)
+        trigger_word = character.trigger_word or data.get('trigger_word', '').strip()
 
         try:
             num_scenes = int(num_scenes)
@@ -66,7 +144,7 @@ def generateScenes(request):
 
         # Use the prompt as concept for script generation
         concept = prompt
-        project_title = f"Generated from: {prompt}..."
+        project_title = f"Generated from: {prompt}"
         
         # Create project using existing logic
         project, created = models.Project.objects.get_or_create(
@@ -126,13 +204,13 @@ def generateScenes(request):
             )
             
             # Prepare scene data - the script should already contain the trigger_word
-            scene_prompt = scene.story_context or scene.script
-            
+
             created_scenes.append({
                 "scene_number": scene.scene_number,
                 "scene_title": scene.title,
-                "final_prompt": scene_prompt,
-                "trigger_word": trigger_word
+                "script": scene.script,
+                "story_context": scene.story_context,
+                "trigger_word": trigger_word,
             })
 
         # Check if character exists
