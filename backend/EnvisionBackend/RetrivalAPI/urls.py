@@ -3,6 +3,7 @@ from . import views
 
 urlpatterns = [
     path('get-all-characters/', views.getCharacters, name='get_all_characters'),
+    path('select-character/', views.setCharacter, name='select_character'),
     # get scenes
     path('generate-scenes/', views.generateScenes, name='generate_scenes'),
     
