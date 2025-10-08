@@ -129,12 +129,13 @@ def generateScenes(request):
         data = json.loads(request.body)
         num_scenes = data.get('num_scenes', 3)
         prompt = data.get('prompt', '').strip()
-        character, error_response = validate_character_selection(request)
-        if character is None:
-            return error_response
+        # character, error_response= validate_character_selection(request)
+        # if character is None:
+        #     return error_response
         
         # Use character's trigger_word if not provided in request
-        trigger_word = character.trigger_word or data.get('trigger_word', '').strip()
+        trigger_word =data.get('trigger_word').strip()
+        character = models.Character.objects.get(trigger_word=trigger_word)
 
         try:
             num_scenes = int(num_scenes)

@@ -33,11 +33,14 @@ SECRET_KEY = os.getenv('Django_SECRET_KEY')
 DEBUG = False
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '.onrender.com']
+CORS_ALLOW_ALL_ORIGINS = True 
 
+CORS_ALLOW_CREDENTIALS = True 
 
 # Application definition
 
 INSTALLED_APPS = [
+    'corsheaders',     
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -49,7 +52,6 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt', 
     'djoser',
-    'corsheaders',     
 ]
 
 MIDDLEWARE = [
@@ -162,5 +164,5 @@ REST_FRAMEWORK = {
 }
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=30),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=365)\
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=365)
 }
