@@ -32,7 +32,7 @@ SECRET_KEY = os.getenv('Django_SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'envision-nf6f.onrender.com']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'https://envision-nf6f.onrender.com']
 CORS_ALLOW_ALL_ORIGINS = True 
 
 CORS_ALLOW_CREDENTIALS = True 
@@ -104,7 +104,7 @@ WSGI_APPLICATION = 'EnvisionBackend.wsgi.application'
 # Database
 DATABASES = {
     'default': dj_database_url.parse(
-        config("SUPABASE_DB_URL"),
+        os.getenv("SUPABASE_DB_URL"),
     )
 }
 
