@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # filepath: backend/build.sh
 set -o errexit
+# Make sure we're executable
+chmod +x "$0"
 
 echo "=== Installing dependencies ==="
 pip install -r requirements.txt
