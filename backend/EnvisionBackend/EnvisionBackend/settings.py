@@ -116,15 +116,14 @@ WSGI_APPLICATION = 'EnvisionBackend.wsgi.application'
 #         conn_health_checks=True,
 #     )
 # }
+
 DATABASES = {
-    'default': dj_database_url.config(
-        default=os.getenv("SUPABASE_DB_URL"),
+    'default': dj_database_url.parse(
+        os.getenv("SUPABASE_DB_URL") + "?sslmode=disable",
         conn_max_age=600,
-        conn_health_checks=True
+        conn_health_checks=True,
     )
 }
-DATABASES['default']['OPTIONS'] = {'sslmode': 'require'}
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
