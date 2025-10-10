@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
-# filepath: build.sh
+# filepath: backend/build.sh
 set -o errexit
 
+echo "=== Installing dependencies ==="
 pip install -r requirements.txt
+
+echo "=== Changing to Django project directory ==="
+cd EnvisionBackend
+
+echo "=== Collecting static files ==="
 python manage.py collectstatic --no-input
+
+echo "=== Build completed ==="
