@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
+# filepath: backend/build.sh
 set -o errexit
 
-pip install -r EnvisionBackend/requirements.txt
-python EnvisionBackend/manage.py collectstatic --no-input
-python EnvisionBackend/manage.py migrate
+echo "Installing dependencies..."
+cd backend/EnvisionBackend
+pip install -r requirements.txt
+
+echo "Collecting static files..."
+python manage.py collectstatic --no-input
+
+echo "Build completed! Migrations will run on startup."

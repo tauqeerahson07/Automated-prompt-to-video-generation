@@ -13,39 +13,43 @@ import os
 from pathlib import Path
 import dj_database_url
 from datetime import timedelta
-from decouple import config
 
-# connecting to s3 bucket
-from dotenv import load_dotenv
-load_dotenv()
-
+# Only load .env in development
+if os.path.exists(Path(__file__).resolve().parent.parent / '.env'):
+    from dotenv import load_dotenv
+    load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
+# Helper function for required environment variables
+def get_required_env(key, default=None):
+    value = os.getenv(key, default)
+    if not value and default is None:
+        raise ValueError(f"Required environment variable '{key}' is not set")
+    return value
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('Django_SECRET_KEY')
+SECRET_KEY = get_required_env('Django_SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
     '0.0.0.0',
-    'envision-nf6f.onrender.com'
-    ]
-CORS_ALLOW_ALL_ORIGINS = True 
+    'envision-nf6f.onrender.com',
+    '.onrender.com'  # Allow all Render subdomains
+]
 
+CORS_ALLOW_ALL_ORIGINS = True 
 CORS_ALLOW_CREDENTIALS = True 
+CSRF_TRUSTED_ORIGINS = ['https://envision-nf6f.onrender.com']
 
 # Application definition
-
 INSTALLED_APPS = [
+    'corsheaders',  # Move to top for proper CORS handling
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -57,7 +61,6 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt', 
     'djoser',
-    'corsheaders',
 ]
 
 MIDDLEWARE = [
@@ -72,17 +75,6 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
-
-AWS_ACCESS_KEY_ID = os.getenv("Envision_S3_ACCESS_KEY_ID")
-AWS_STORAGE_BUCKET_NAME = os.getenv("BUCKET")
-AWS_S3_ENDPOINT_URL = os.getenv("SUPABASE_STORAGRE")
-AWS_S3_FILE_OVERWRITE = True
-AWS_DEFAULT_ACL = None
-AWS_QUERYSTRING_AUTH = False
-CSRF_TRUSTED_ORIGINS = ['https://envision-nf6f.onrender.com']
-
-
 ROOT_URLCONF = 'EnvisionBackend.urls'
 
 TEMPLATES = [
@@ -96,7 +88,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-                'django.template.context_processors.media',  # ADD THIS LINE
+                'django.template.context_processors.media',
             ],
         },
     },
@@ -104,30 +96,67 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'EnvisionBackend.wsgi.application'
 
+# Database with error handling
+DATABASE_URL = get_required_env("SUPABASE_DB_URL")
 
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+try:
+    DATABASES = {
+        'default': dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
+    }
+    
+    # Add connection options for better reliability
+    DATABASES['default'].update({
+        'OPTIONS': {
+            'connect_timeout': 10,
+        }
+    })
+except Exception as e:
+    print(f"Database configuration error: {e}")
+    # Fallback for development only
+    if DEBUG:
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.sqlite3',
+                'NAME': BASE_DIR / 'db.sqlite3',
+            }
+        }
+    else:
+        raise
 
-# Database
-# DATABASES = {
-#     'default': dj_database_url.parse(
-#         os.getenv("SUPABASE_DB_URL"),
-#         conn_max_age=600,
-#         conn_health_checks=True,
-#     )
-# }
-
-DATABASES = {
-    'default': dj_database_url.parse(
-        os.getenv("SUPABASE_DB_URL"),
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
+# Logging for debugging
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
 }
 
 # Password validation
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
-
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
@@ -143,29 +172,20 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
-# https://docs.djangoproject.com/en/5.2/topics/i18n/
-
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
 
-
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.2/howto/static-files/
-# Static files configuration for Render
+# Static files configuration
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
+# Media files (for user uploads) - local storage only
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -179,6 +199,7 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
 }
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=365),
