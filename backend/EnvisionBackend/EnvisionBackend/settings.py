@@ -109,11 +109,19 @@ WSGI_APPLICATION = 'EnvisionBackend.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 # Database
+# DATABASES = {
+#     'default': dj_database_url.parse(
+#         os.getenv("SUPABASE_DB_URL"),
+#         conn_max_age=600,
+#         conn_health_checks=True,
+#     )
+# }
 DATABASES = {
     'default': dj_database_url.parse(
         os.getenv("SUPABASE_DB_URL"),
         conn_max_age=600,
         conn_health_checks=True,
+        ssl_require=True
     )
 }
 
