@@ -3,7 +3,7 @@
 set -o errexit
 
 echo "Installing dependencies..."
-cd backend/EnvisionBackend
+cd EnvisionBackend
 pip install -r requirements.txt
 
 echo "Collecting static files..."
