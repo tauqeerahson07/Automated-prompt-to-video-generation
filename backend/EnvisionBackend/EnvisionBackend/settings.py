@@ -33,6 +33,7 @@ SECRET_KEY = os.getenv('Django_SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
 
+<<<<<<< HEAD
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
@@ -47,10 +48,17 @@ CSRF_TRUSTED_ORIGINS = ['https://envision-nf6f.onrender.com']
 
 AWS_DEFAULT_ACL = None
 AWS_QUERYSTRING_AUTH = False
+=======
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '.onrender.com']
+
+>>>>>>> parent of 22a5184 (chages done by tauqeer on karam's laptop)
 
 # Application definition
 INSTALLED_APPS = [
+<<<<<<< HEAD
     'corsheaders',  # Move to top for proper CORS handling
+=======
+>>>>>>> parent of 22a5184 (chages done by tauqeer on karam's laptop)
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -62,6 +70,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt', 
     'djoser',
+    'corsheaders',     
 ]
 
 MIDDLEWARE = [
@@ -162,5 +171,9 @@ REST_FRAMEWORK = {
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=30),
+<<<<<<< HEAD
     'REFRESH_TOKEN_LIFETIME': timedelta(days=365),
+=======
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=365)\
+>>>>>>> parent of 22a5184 (chages done by tauqeer on karam's laptop)
 }
