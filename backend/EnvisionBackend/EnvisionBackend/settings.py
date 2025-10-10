@@ -122,7 +122,6 @@ DATABASES = {
         os.getenv("SUPABASE_DB_URL"),
         conn_max_age=600,
         conn_health_checks=True,
-        ssl_require=True,  # ✅ this forces SSL
     )
 }
 
