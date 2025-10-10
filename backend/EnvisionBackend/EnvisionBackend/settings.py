@@ -19,21 +19,6 @@ from decouple import config
 from dotenv import load_dotenv
 load_dotenv()
 
-import logging
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-        },
-    },
-    'root': {
-        'handlers': ['console'],
-        'level': 'ERROR',
-    },
-}
-
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -48,7 +33,12 @@ SECRET_KEY = os.getenv('Django_SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'envision-nf6f.onrender.com']
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    '0.0.0.0',
+    'envision-nf6f.onrender.com'
+    ]
 CORS_ALLOW_ALL_ORIGINS = True 
 
 CORS_ALLOW_CREDENTIALS = True 
@@ -68,6 +58,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt', 
     'djoser',
+    'corsheaders',
 ]
 
 MIDDLEWARE = [
@@ -90,6 +81,7 @@ AWS_S3_ENDPOINT_URL = os.getenv("SUPABASE_STORAGRE")
 AWS_S3_FILE_OVERWRITE = True
 AWS_DEFAULT_ACL = None
 AWS_QUERYSTRING_AUTH = False
+CSRF_TRUSTED_ORIGINS = ['https://envision-nf6f.onrender.com']
 
 
 ROOT_URLCONF = 'EnvisionBackend.urls'
@@ -121,6 +113,8 @@ WSGI_APPLICATION = 'EnvisionBackend.wsgi.application'
 DATABASES = {
     'default': dj_database_url.parse(
         os.getenv("SUPABASE_DB_URL"),
+        conn_max_age=600,
+        conn_health_checks=True,
     )
 }
 
