@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 import dj_database_url
+from decouple import config
 from datetime import timedelta
 
 # Only load .env in development
@@ -22,30 +23,30 @@ if os.path.exists(Path(__file__).resolve().parent.parent / '.env'):
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Helper function for required environment variables
-def get_required_env(key, default=None):
-    value = os.getenv(key, default)
-    if not value and default is None:
-        raise ValueError(f"Required environment variable '{key}' is not set")
-    return value
+
+ROOT_DIR = BASE_DIR.parent  # This goes up one more level to the project root
+ENV_FILE = ROOT_DIR / '.env'
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = get_required_env('Django_SECRET_KEY')
+SECRET_KEY = os.getenv('Django_SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+DEBUG = config('DEBUG', default=False, cast=bool)
 
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
     '0.0.0.0',
     'envision-nf6f.onrender.com',
-    '.onrender.com'  # Allow all Render subdomains
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True 
+
+# CORS_ALLOW_ALL_ORIGINS = True 
 CORS_ALLOW_CREDENTIALS = True 
 CSRF_TRUSTED_ORIGINS = ['https://envision-nf6f.onrender.com']
+
+AWS_DEFAULT_ACL = None
+AWS_QUERYSTRING_AUTH = False
 
 # Application definition
 INSTALLED_APPS = [
@@ -97,64 +98,16 @@ TEMPLATES = [
 WSGI_APPLICATION = 'EnvisionBackend.wsgi.application'
 
 # Database with error handling
-DATABASE_URL = get_required_env("SUPABASE_DB_URL")
+DATABASE_URL = os.getenv("SUPABASE_DB_URL")
 
-try:
-    DATABASES = {
-        'default': dj_database_url.parse(
-            DATABASE_URL,
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
-    }
-    
-    # Add connection options for better reliability
-    DATABASES['default'].update({
-        'OPTIONS': {
-            'connect_timeout': 10,
-        }
-    })
-except Exception as e:
-    print(f"Database configuration error: {e}")
-    # Fallback for development only
-    if DEBUG:
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.sqlite3',
-                'NAME': BASE_DIR / 'db.sqlite3',
-            }
-        }
-    else:
-        raise
-
-# Logging for debugging
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
-        },
-    },
-    'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-    },
+DATABASES = {
+    'default': dj_database_url.parse(
+        DATABASE_URL,
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 }
+    
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -188,6 +141,13 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# CORS settings(For frontend)
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # Allow Next.js frontend
+    "http://192.168.40.1:3000",
+    "https://envision-nf6f.onrender.com",
+]
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
