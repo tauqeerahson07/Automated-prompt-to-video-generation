@@ -119,9 +119,10 @@ WSGI_APPLICATION = 'EnvisionBackend.wsgi.application'
 
 DATABASES = {
     'default': dj_database_url.parse(
-        os.getenv("SUPABASE_DB_URL") + "?sslmode=disable",
+        os.getenv("SUPABASE_DB_URL"),
         conn_max_age=600,
         conn_health_checks=True,
+        ssl_require=True,  # ✅ this forces SSL
     )
 }
 
