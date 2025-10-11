@@ -1,16 +1,11 @@
-#!/usr/bin/env bash
-# filepath: backend/build.sh
-set -o errexit
-# Make sure we're executable
-chmod +x "$0"
+#!/bin/bash
 
-echo "=== Installing dependencies ==="
+# Install dependencies
 pip install -r requirements.txt
 
-echo "=== Changing to Django project directory ==="
 cd EnvisionBackend
+# Apply migrations
+python manage.py migrate --no-input
 
-echo "=== Collecting static files ==="
+# Collect static files
 python manage.py collectstatic --no-input
-
-echo "=== Build completed ==="
