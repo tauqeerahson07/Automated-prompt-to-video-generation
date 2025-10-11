@@ -21,7 +21,7 @@ def get_env_variable(var_name, default=None):
 SECRET_KEY = get_env_variable('SECRET_KEY', 'django-insecure-fallback-key-for-local-dev')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False  # Default False for production
+DEBUG = True  # Default False for production
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '.onrender.com', '*']
 
