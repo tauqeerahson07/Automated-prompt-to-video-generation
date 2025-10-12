@@ -203,11 +203,13 @@ def generateScenes(request):
             # Prepare scene data - the script should already contain the trigger_word
 
             created_scenes.append({
+                "id": str(scene.id),
                 "scene_number": scene.scene_number,
                 "scene_title": scene.title,
                 "script": scene.script,
                 "story_context": scene.story_context,
                 "trigger_word": trigger_word,
+                
             })
 
         # Check if character exists
@@ -595,6 +597,7 @@ def EditScene(request):
             existing_scenes = []
             for scene in project.scenes.all():
                 existing_scenes.append({
+                    'id': str(scene.id),
                     'scene_number': scene.scene_number,
                     'script': scene.script,
                     'story_context': scene.story_context,
@@ -666,10 +669,11 @@ def EditScene(request):
                 new_story = updated_scene.get('story')
                 new_script = updated_scene.get('script') or new_story
                 new_context = updated_scene.get('story_context') or new_story or new_script
+                scene_title = updated_scene.get('title', db_scene.title)
 
                 db_scene.script = new_script or db_scene.script
                 db_scene.story_context = new_context or db_scene.story_context
-                db_scene.title = updated_scene.get('title', db_scene.title)
+                db_scene.title = scene_title or db_scene.title
                 db_scene.save()
 
                 if scene_number_db == scene_number:
@@ -844,6 +848,7 @@ def EditAllScenes(request):
                 new_story = updated_scene.get('story')
                 new_script = updated_scene.get('script') or new_story
                 new_context = updated_scene.get('story_context') or new_story or new_script
+                scene_title = updated_scene.get('title', db_scene.title)
 
                 # Check if content actually changed
                 old_script = db_scene.script
@@ -856,7 +861,7 @@ def EditAllScenes(request):
                     # Apply character placeholder enforcement and update
                     db_scene.script = new_script
                     db_scene.story_context = new_context or new_script
-                    db_scene.title = updated_scene.get('title', db_scene.title)
+                    db_scene.title = scene_title or db_scene.title
                     db_scene.save()
                     scenes_updated_count += 1
                 else:

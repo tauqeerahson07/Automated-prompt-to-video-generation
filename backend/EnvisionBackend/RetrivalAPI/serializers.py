@@ -4,15 +4,11 @@ import base64
 
 class SceneSerializer(serializers.ModelSerializer):
     project_title = serializers.CharField(source='project.title', read_only=True)
-    scene_title = serializers.SerializerMethodField()
 
     class Meta:
         model = Scene
-        fields = ['id', 'scene_number', 'script', 'story_context', 'created_at', 'project_title', 'scene_title']
+        fields = ['id', 'scene_number', 'script', 'story_context', 'created_at', 'project_title', 'title']
 
-    def get_scene_title(self, obj):
-        # You can customize this as needed
-        return f"Scene {obj.scene_number}"
 
 class ProjectSerializer(serializers.ModelSerializer):
     scenes = SceneSerializer(many=True, read_only=True)
