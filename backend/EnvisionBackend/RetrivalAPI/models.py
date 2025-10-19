@@ -61,6 +61,7 @@ class Project(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    video = models.TextField(blank=True)  # Stores base64
 
     def __str__(self):
         return self.title
@@ -73,6 +74,8 @@ class Scene(models.Model):
     script = models.TextField()
     story_context = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    image_prompt = models.TextField(blank=True)
+    image = models.TextField(blank=True)  # Stores base64
 
     class Meta:
         ordering = ['scene_number']

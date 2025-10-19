@@ -26,6 +26,7 @@ djangorestframework-simplejwt = ">=5.3.0"
 pillow = "*"
 rest-framework-simplejwt = "*"
 whitenoise = "*"
+websocket-client = "*"
 
 [dev-packages]
 

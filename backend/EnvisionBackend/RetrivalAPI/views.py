@@ -1,4 +1,5 @@
 from django.shortcuts import render
+from django.http import JsonResponse
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.response import Response
@@ -13,9 +14,11 @@ from .services.checkpoints import checkpointer
 from . import models, serializers
 from .services.script_generation import detect_project_type
 from .services.image_prompt_generation import ImagePromptGenerator
+from .services.comfyUIservices import fetch_image_from_comfy
 from .main import build_workflow
 from dotenv import load_dotenv
 from .models import WorkflowCheckpoint
+import base64
 import os
 
 load_dotenv()
@@ -251,6 +254,100 @@ def generateScenes(request):
         
         
 
+# @api_view(['POST'])
+# @authentication_classes([JWTAuthentication])
+# @permission_classes([IsAuthenticated])
+# def generate_image_prompts(request):
+#     """
+#     API endpoint to generate image prompts from scenes data
+    
+#     Expects: { "project_id": "..." }
+#     Retrieves scenes from database and generates image prompts
+#     """
+#     try:
+#         data = json.loads(request.body)
+        
+#         if not data:
+#             return Response({
+#                 "error": "Request body is required",
+#                 "success": False
+#             }, status=status.HTTP_400_BAD_REQUEST)
+        
+#         project_id = data.get('project_id')
+        
+#         if not project_id:
+#             return Response({
+#                 "error": "project_id is required",
+#                 "success": False
+#             }, status=status.HTTP_400_BAD_REQUEST)
+        
+#         # Get project and verify ownership
+#         try:
+#             project = models.Project.objects.get(id=project_id, user=request.user)
+#         except models.Project.DoesNotExist:
+#             return Response({
+#                 "error": "Project not found or access denied",
+#                 "success": False
+#             }, status=status.HTTP_404_NOT_FOUND)
+        
+        
+#         # Get all scenes for this project
+#         scenes = models.Scene.objects.filter(project=project).order_by('scene_number')
+        
+#         if not scenes.exists():
+#             return Response({
+#                 "error": "No scenes found for this project",
+#                 "success": False
+#             }, status=status.HTTP_404_NOT_FOUND)
+        
+        
+#         trigger_word = project.trigger_word or data.get('trigger_word', '')
+        
+#         # Prepare scenes data in the format expected by ImagePromptGenerator
+#         scenes_data = []
+#         for scene in scenes:
+#             scene_prompt = scene.story_context or scene.script
+#             scenes_data.append({
+#                 "scene_number": scene.scene_number,
+#                 "scene_title": scene.title,
+#                 "final_prompt": scene_prompt,
+#                 "trigger_word": trigger_word
+#             })
+        
+#         # Format data as complete API response structure
+#         formatted_data = {
+#             "status": "success",
+#             "data": {
+#                 "project_id": str(project.id),
+#                 "project_title": project.title,
+#                 "original_prompt": project.concept,
+#                 "trigger_word": trigger_word,
+#                 "total_scenes": len(scenes_data),
+#                 "scenes": scenes_data
+#             }
+#         }
+        
+#         # Generate image prompts using the formatted data
+#         generator = ImagePromptGenerator()  # Create instance
+#         result = generator.generate_image_prompt(formatted_data)
+        
+#         if result.get("success", False):
+#             return Response(result, status=status.HTTP_200_OK)
+#         else:
+#             return Response(result, status=status.HTTP_400_BAD_REQUEST)
+            
+#     except json.JSONDecodeError:
+#         return Response({
+#             "error": "Invalid JSON format in request body",
+#             "success": False
+#         }, status=status.HTTP_400_BAD_REQUEST)
+#     except Exception as e:
+#         return Response({
+#             "error": f"Internal server error: {str(e)}",
+#             "success": False
+#         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
@@ -287,7 +384,6 @@ def generate_image_prompts(request):
                 "success": False
             }, status=status.HTTP_404_NOT_FOUND)
         
-        
         # Get all scenes for this project
         scenes = models.Scene.objects.filter(project=project).order_by('scene_number')
         
@@ -297,18 +393,23 @@ def generate_image_prompts(request):
                 "success": False
             }, status=status.HTTP_404_NOT_FOUND)
         
-        
         trigger_word = project.trigger_word or data.get('trigger_word', '')
         
-        # Prepare scenes data in the format expected by ImagePromptGenerator
+        # Generate prompts for each scene
         scenes_data = []
         for scene in scenes:
             scene_prompt = scene.story_context or scene.script
+            final_prompt = f"{scene_prompt}".strip()
+            
+            # Save the generated prompt to the database
+            scene.image_prompt = final_prompt
+            scene.save()
+            
+            # Add scene data to the response
             scenes_data.append({
                 "scene_number": scene.scene_number,
                 "scene_title": scene.title,
-                "final_prompt": scene_prompt,
-                "trigger_word": trigger_word
+                "image_prompt": final_prompt
             })
         
         # Format data as complete API response structure
@@ -324,14 +425,7 @@ def generate_image_prompts(request):
             }
         }
         
-        # Generate image prompts using the formatted data
-        generator = ImagePromptGenerator()  # Create instance
-        result = generator.generate_image_prompt(formatted_data)
-        
-        if result.get("success", False):
-            return Response(result, status=status.HTTP_200_OK)
-        else:
-            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        return Response(formatted_data, status=status.HTTP_200_OK)
             
     except json.JSONDecodeError:
         return Response({
@@ -343,7 +437,106 @@ def generate_image_prompts(request):
             "error": f"Internal server error: {str(e)}",
             "success": False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-# Create your views here.
+        
+
+
+@api_view(['POST'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def generate_images(request):
+    """
+    API endpoint to generate images from existing prompts
+    
+    Expects: { "project_id": "..." }
+    Uses prompts from the database to generate images
+    """
+    try:
+        data = json.loads(request.body)
+        
+        if not data:
+            return Response({
+                "error": "Request body is required",
+                "success": False
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        project_id = data.get('project_id')
+        
+        if not project_id:
+            return Response({
+                "error": "project_id is required",
+                "success": False
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get project and verify ownership
+        try:
+            project = models.Project.objects.get(id=project_id, user=request.user)
+        except models.Project.DoesNotExist:
+            return Response({
+                "error": "Project not found or access denied",
+                "success": False
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Get all scenes for this project
+        scenes = models.Scene.objects.filter(project=project).order_by('scene_number')
+        
+        if not scenes.exists():
+            return Response({
+                "error": "No scenes found for this project",
+                "success": False
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        scenes_data = []
+        for scene in scenes:
+            if not scene.image_prompt:
+                return Response({
+                    "error": f"Image prompt not found for scene {scene.scene_number}",
+                    "success": False
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                # Use the image prompt to generate the image
+                image_data = fetch_image_from_comfy(scene.image_prompt)
+                
+                # Save the generated image as base64 in the database
+                scene.image = f"data:image/png;base64,{base64.b64encode(image_data).decode('utf-8')}"
+                scene.save()
+                
+                # Add scene data to the response
+                scenes_data.append({
+                    "scene_number": scene.scene_number,
+                    "scene_title": scene.title,
+                    "image": scene.image  # Base64-encoded image
+                })
+            except Exception as e:
+                return Response({
+                    "error": f"Failed to generate image for scene {scene.scene_number}: {str(e)}",
+                    "success": False
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        # Format data as complete API response structure
+        formatted_data = {
+            "status": "success",
+            "data": {
+                "project_id": str(project.id),
+                "project_title": project.title,
+                "total_scenes": len(scenes_data),
+                "scenes": scenes_data
+            }
+        }
+        
+        return Response(formatted_data, status=status.HTTP_200_OK)
+            
+    except json.JSONDecodeError:
+        return Response({
+            "error": "Invalid JSON format in request body",
+            "success": False
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({
+            "error": f"Internal server error: {str(e)}",
+            "success": False
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 @api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
@@ -939,7 +1132,6 @@ def EditAllScenes(request):
             "trace": traceback.format_exc(),
             "error_code": "internal_error"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 
 @api_view(['GET'])
