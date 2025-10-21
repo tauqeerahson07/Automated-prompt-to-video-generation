@@ -7,7 +7,8 @@ urlpatterns = [
     # get scenes
     path('generate-scenes/', views.generateScenes, name='generate_scenes'),
     
-    path('generate-image-prompts/', views.generate_image_prompts, name='generate_image_prompts'),
+    # path('generate-image-prompts/', views.generate_image_prompts, name='generate_image_prompts'),
+    path('generate-images/', views.generate_images, name='generate_images'),
     # Project management endpoints
     path('list-projects/', views.listProjects, name='list_projects'),
     path('create-project/', views.CreateProject, name='create_project'),

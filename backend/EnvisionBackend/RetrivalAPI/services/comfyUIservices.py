@@ -1,9 +1,9 @@
-import websocket 
+# import websocket 
 import uuid
 import json
 import urllib.request
 import urllib.parse
-
+from websocket import create_connection
 save_image_websocket = 'SaveImageWebsocket'
 server_address = "127.0.0.1:8188"
 client_id = str(uuid.uuid4())
@@ -193,9 +193,53 @@ def get_images(ws, prompt):
 
     return output_image
 
-def fetch_image_from_comfy(input):
-    ws = websocket.WebSocket()
-    ws.connect("ws://{}/ws?clientId={}".format(server_address, client_id))
-    images = get_images(ws, get_prompt_with_workflow(input))
-    ws.close()
-    return images
+# def fetch_image_from_comfy(input):
+#     ws = websocket.WebSocket()
+#     ws.connect("ws://{}/ws?clientId={}".format(server_address, client_id))
+#     images = get_images(ws, get_prompt_with_workflow(input))
+#     ws.close()
+#     return images
+def fetch_image_from_comfy(prompt):
+    """
+    Main function to generate an image using ComfyUI
+    
+    Args:
+        prompt: Text prompt for image generation
+        
+    Returns:
+        bytes: Generated image data
+        
+    Raises:
+        Exception: If connection fails or image generation fails
+    """
+    ws = None
+    try:
+        ws_url = f"ws://{server_address}/ws?clientId={client_id}"
+        
+        print(f"DEBUG: Connecting to ComfyUI at {ws_url}")
+        ws = create_connection(ws_url, timeout=5000)
+        
+        workflow = get_prompt_with_workflow(prompt)
+        print(f"DEBUG: Prompt: {prompt[:200]}...")
+        
+        images = get_images(ws, workflow)
+        
+        if images is None:
+            raise Exception("No image data received from ComfyUI")
+        
+        return images
+        
+    except Exception as e:
+        error_msg = str(e)
+        if "Connection refused" in error_msg or "ConnectTimeoutError" in error_msg:
+            raise Exception(f"Cannot connect to ComfyUI at {server_address}. Is the server running?")
+        elif "timed out" in error_msg.lower():
+            raise Exception("Timeout connecting to ComfyUI. Is the server running?")
+        else:
+            raise Exception(f"ComfyUI error: {error_msg}")
+    finally:
+        if ws:
+            try:
+                ws.close()
+            except:
+                pass

@@ -348,10 +348,10 @@ def generateScenes(request):
 #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(['POST'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def generate_image_prompts(request):
+# @api_view(['POST'])
+# @authentication_classes([JWTAuthentication])
+# @permission_classes([IsAuthenticated])
+def generate_image_prompts(p_id, u_id):
     """
     API endpoint to generate image prompts from scenes data
     
@@ -359,15 +359,7 @@ def generate_image_prompts(request):
     Retrieves scenes from database and generates image prompts
     """
     try:
-        data = json.loads(request.body)
-        
-        if not data:
-            return Response({
-                "error": "Request body is required",
-                "success": False
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        project_id = data.get('project_id')
+        project_id = p_id
         
         if not project_id:
             return Response({
@@ -377,7 +369,7 @@ def generate_image_prompts(request):
         
         # Get project and verify ownership
         try:
-            project = models.Project.objects.get(id=project_id, user=request.user)
+            project = models.Project.objects.get(id=project_id, user=u_id)
         except models.Project.DoesNotExist:
             return Response({
                 "error": "Project not found or access denied",
@@ -393,24 +385,79 @@ def generate_image_prompts(request):
                 "success": False
             }, status=status.HTTP_404_NOT_FOUND)
         
-        trigger_word = project.trigger_word or data.get('trigger_word', '')
-        
-        # Generate prompts for each scene
+        trigger_word = project.trigger_word 
+        # Convert scenes queryset to a list of dictionaries
         scenes_data = []
         for scene in scenes:
-            scene_prompt = scene.story_context or scene.script
-            final_prompt = f"{scene_prompt}".strip()
-            
-            # Save the generated prompt to the database
-            scene.image_prompt = final_prompt
-            scene.save()
-            
-            # Add scene data to the response
             scenes_data.append({
                 "scene_number": scene.scene_number,
                 "scene_title": scene.title,
-                "image_prompt": final_prompt
+                "story_context": scene.story_context,
+                "script": scene.script,
             })
+        
+        thread_id = f"user-{u_id.id}-{project.id}"
+        config = {"configurable": {"thread_id": thread_id}}
+        app = build_workflow(entry_point="generate_image_prompts")
+        init_state = {
+            "project_id": str(project.id),
+            "project_title": project.title,
+            "concept": project.concept,
+            "trigger_word": trigger_word,
+            "scenes": scenes_data
+        }
+        
+        print("DEBUG: Invoking workflow with state:", init_state)
+        state_after_prompt_gen = app.invoke(init_state, config=config)
+        print("DEBUG: State after prompt generation:", state_after_prompt_gen)
+        
+        # Get the image_prompts data from state
+        image_prompts_data = state_after_prompt_gen.get("image_prompts", {})
+        updated_scenes = image_prompts_data.get("scenes", [])
+        
+        print(f"DEBUG: Found {len(updated_scenes)} scenes with image prompts")
+        
+        if not updated_scenes:
+            # Fallback: try getting scenes directly from state
+            updated_scenes = state_after_prompt_gen.get("scenes", [])
+            print(f"DEBUG: Fallback - Found {len(updated_scenes)} scenes in state")
+        
+        # Update database with generated prompts
+        response_scenes_data = []
+        for scene_dict in updated_scenes:
+            scene_number = scene_dict.get("scene_number")
+            final_prompt = scene_dict.get("image_prompt")
+            
+            if not scene_number:
+                print(f"DEBUG: Skipping scene without scene_number: {scene_dict}")
+                continue
+                
+            if not final_prompt:
+                print(f"DEBUG: No image_prompt found for scene {scene_number}")
+                continue
+            
+            try:
+                # Get the database object
+                scene_obj = models.Scene.objects.get(project=project, scene_number=scene_number)
+                
+                # Update the image prompt
+                scene_obj.image_prompt = final_prompt
+                scene_obj.save()
+                
+                print(f"DEBUG: Saved image prompt for scene {scene_number}: {final_prompt[:100]}...")
+                
+                # Add to response using dictionary values
+                response_scenes_data.append({
+                    "scene_number": scene_dict.get("scene_number"),
+                    "scene_title": scene_dict.get("scene_title", scene_obj.title),
+                    "image_prompt": final_prompt
+                })
+            except models.Scene.DoesNotExist:
+                print(f"DEBUG: Scene {scene_number} not found in database")
+                continue
+        
+        # Clean up checkpoints
+        WorkflowCheckpoint.objects.filter(thread_id=thread_id).delete()
         
         # Format data as complete API response structure
         formatted_data = {
@@ -420,11 +467,12 @@ def generate_image_prompts(request):
                 "project_title": project.title,
                 "original_prompt": project.concept,
                 "trigger_word": trigger_word,
-                "total_scenes": len(scenes_data),
-                "scenes": scenes_data
+                "total_scenes": len(response_scenes_data),
+                "scenes": response_scenes_data
             }
         }
         
+        print(f"DEBUG: Returning response with {len(response_scenes_data)} scenes")
         return Response(formatted_data, status=status.HTTP_200_OK)
             
     except json.JSONDecodeError:
@@ -433,11 +481,12 @@ def generate_image_prompts(request):
             "success": False
         }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
+        import traceback
+        print("ERROR in generate_image_prompts:", traceback.format_exc())
         return Response({
             "error": f"Internal server error: {str(e)}",
             "success": False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
 
 
 @api_view(['POST'])
@@ -468,6 +517,14 @@ def generate_images(request):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Get project and verify ownership
+        try:
+            scenes_prompt_data = generate_image_prompts(project_id,request.user)
+        except Exception as e:
+            return Response({
+                "error": f"Failed to generate image prompts: {str(e)}",
+                "success": False
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
         try:
             project = models.Project.objects.get(id=project_id, user=request.user)
         except models.Project.DoesNotExist:

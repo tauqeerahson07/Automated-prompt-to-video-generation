@@ -503,7 +503,7 @@ Return all scenes in this exact format:
         state["needs_rewrite"] = False
         state["edit_all_scenes"] = False
         return state
-    
+
 def node_generate_image_prompts(state: State) -> State:
     """Generate image prompts from the finalized scenes."""
     try:
@@ -542,13 +542,18 @@ def node_generate_image_prompts(state: State) -> State:
         generator = ImagePromptGenerator()
         result = generator.generate_image_prompt(formatted_data)
         
+        print("DEBUG: ImagePromptGenerator result:", result)  # Add this debug log
+        
         if result.get("success", False):
-            state["image_prompts"] = result.get("data", {})
-            print("✅ Image prompts generated successfully!")
-            
-            # Display generated prompts
             image_prompts_data = result.get("data", {})
             scenes_with_prompts = image_prompts_data.get("scenes", [])
+            
+            state["image_prompts"] = {
+                "project_id": image_prompts_data.get("project_id"),
+                "project_title": image_prompts_data.get("project_title"),
+                "scenes": scenes_with_prompts
+            }
+            print("✅ Image prompts generated successfully!")
             
             print(f"\n🖼️ Generated Image Prompts ({len(scenes_with_prompts)} scenes):")
             for scene_prompt in scenes_with_prompts:
@@ -570,6 +575,7 @@ def node_generate_image_prompts(state: State) -> State:
         print(f"❌ {error_msg}")
         
     return state
+
 
 def node_finalize_output(state: State) -> State:
     """Finalize and present the complete output."""
