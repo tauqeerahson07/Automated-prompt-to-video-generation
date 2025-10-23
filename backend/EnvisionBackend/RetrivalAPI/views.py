@@ -562,7 +562,7 @@ def generate_images(request):
                 scenes_data.append({
                     "scene_number": scene.scene_number,
                     "scene_title": scene.title,
-                    "image": scene.image  # Base64-encoded image
+                    "image": scene.image  # Base64-encoded image 
                 })
             except Exception as e:
                 return Response({
@@ -591,6 +591,141 @@ def generate_images(request):
     except Exception as e:
         return Response({
             "error": f"Internal server error: {str(e)}",
+            "success": False
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def edit_image(request):
+    """
+    API endpoint to edit images based on user instructions
+    
+    Expects: { "project_id": "...", "edit_instructions": "..." }
+    Uses existing images and edit instructions to generate edited images
+    """
+    try:
+        data = json.loads(request.body)
+        project_id = data.get('project_id')
+        edit_instructions = data.get('edit_instructions', '').strip()
+        scene_number = data.get('scene_number')
+        style = data.get('style', 'realistic').strip()
+        if not project_id or not edit_instructions:
+            return Response({
+                "status": "error",
+                "message": "project_id and edit_instructions are required.",
+                "success": False
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        project = models.Project.objects.get(id=project_id, user=request.user)
+        scene = models.Scene.objects.get(project=project, scene_number=scene_number)
+        if not project:
+            return Response({
+                "status": "error",
+                "message": "Project not found.",
+                "success": False
+            }, status=status.HTTP_404_NOT_FOUND)
+        if not scene:
+            return Response({
+                "status": "error",
+                "message": "Scene not found.",
+                "success": False
+            }, status=status.HTTP_404_NOT_FOUND)
+            
+        # Use ComfyUI service to edit the image based on instructions
+        # image_prompt =f"Following the story context: {scene.story_context}. Edit the image to reflect: {edit_instructions} in a {style} style."
+        image_prompt = (
+            f"Following the story context: {scene.story_context}. "
+            f"Edit the image to reflect: {edit_instructions} and apply the following style: {style}."
+            f"Ensure there is only one character in the frame."
+        )
+        image = fetch_image_from_comfy(image_prompt)
+        scene.image = f"data:image/png;base64,{base64.b64encode(image).decode('utf-8')}"
+        scene.save()
+        return Response({
+            "status": "success",
+            "message": f"Image for scene {scene.scene_number}/{scene.title} edited successfully.",
+            "data": {
+                "scene_number": scene.scene_number,
+                "scene_title": scene.title,
+                "edited_image": scene.image
+            }
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            "status": "error",
+            "message": f"Internal server error: {str(e)}",
+            "success": False
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+@api_view(['POST'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def edit_all_images(request):
+    """
+    API endpoint to edit all images in a project based on user instructions
+    
+    Expects: { "project_id": "...", "edit_instructions": "..." }
+    Uses existing images and edit instructions to generate edited images
+    """
+    try:
+        data = json.loads(request.body)
+        project_id = data.get('project_id')
+        edit_instructions = data.get('edit_instructions', '').strip()
+        style = data.get('style', 'realistic').strip()
+        if not project_id or not edit_instructions:
+            return Response({
+                "status": "error",
+                "message": "project_id and edit_instructions are required.",
+                "success": False
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        project = models.Project.objects.get(id=project_id, user=request.user)
+        if not project:
+            return Response({
+                "status": "error",
+                "message": "Project not found.",
+                "success": False
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        scenes = models.Scene.objects.filter(project=project)
+        edited_scenes = []
+        aggregated_context = " ".join([scene.story_context for scene in scenes])
+        aggregated_instructions = (
+            f"Generate visuals in a {style} style. "
+            f"Incorporate the following edits: {edit_instructions}. "
+            f"Base the visuals on the overall story context: {aggregated_context}."
+            f"Ensure there is only one character in the frame."
+        )
+        for scene in scenes:
+            image_prompt = (
+                f"Scene {scene.scene_number}: {scene.title}. "
+                f"Story context: {scene.story_context}. "
+                f"Edit instructions: {aggregated_instructions}"
+            )
+            image = fetch_image_from_comfy(image_prompt)
+            scene.image = f"data:image/png;base64,{base64.b64encode(image).decode('utf-8')}"
+            scene.save()
+            edited_scenes.append({
+                "scene_number": scene.scene_number,
+                "scene_title": scene.title,
+                "edited_image": scene.image
+            })
+        
+        return Response({
+            "status": "success",
+            "message": f"All images for project '{project.title}' edited successfully.",
+            "data": {
+                "project_id": str(project.id),
+                "project_title": project.title,
+                "edited_scenes": edited_scenes
+            }
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({
+            "status": "error",
+            "message": f"Internal server error: {str(e)}",
             "success": False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -852,7 +987,7 @@ def EditScene(request):
                     'script': scene.script,
                     'story_context': scene.story_context,
                     'story': scene.story_context or scene.script,
-                    'title': scene.title
+                    'scene_title': scene.title
                 })
             checkpoint_state = {
                 "concept": project.concept,
@@ -1022,7 +1157,7 @@ def EditAllScenes(request):
                     'script': scene.script,
                     'story_context': scene.story_context,
                     'story': scene.story_context or scene.script,
-                    'title': scene.title
+                    'scene_title': scene.title
                 })
             checkpoint_state = {
                 "concept": project.concept,

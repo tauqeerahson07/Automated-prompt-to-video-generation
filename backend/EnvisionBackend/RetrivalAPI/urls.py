@@ -8,7 +8,6 @@ urlpatterns = [
     path('generate-scenes/', views.generateScenes, name='generate_scenes'),
     
     # path('generate-image-prompts/', views.generate_image_prompts, name='generate_image_prompts'),
-    path('generate-images/', views.generate_images, name='generate_images'),
     # Project management endpoints
     path('list-projects/', views.listProjects, name='list_projects'),
     path('create-project/', views.CreateProject, name='create_project'),
@@ -18,6 +17,12 @@ urlpatterns = [
     path('edit-scene/', views.EditScene, name='edit_scene'),
     path('edit-all-scenes/', views.EditAllScenes, name='edit_all_scenes'),
     
+    # generate images endpoint
+    path('generate-images/', views.generate_images, name='generate_images'),
+    
+    # edit image(s) endpoint
+    path('edit-image/', views.edit_image, name='edit_images'),
+    path('edit-all-images/', views.edit_all_images, name='edit_all_images'),
     # Project status endpoint
     path('project-status/<uuid:project_id>/', views.GetProjectStatus,name='project_status'),
     
