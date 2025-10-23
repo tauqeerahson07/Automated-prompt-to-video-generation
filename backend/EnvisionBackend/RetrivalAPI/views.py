@@ -987,7 +987,7 @@ def EditScene(request):
                     'script': scene.script,
                     'story_context': scene.story_context,
                     'story': scene.story_context or scene.script,
-                    'scene_title': scene.title
+                    'title': scene.title
                 })
             checkpoint_state = {
                 "concept": project.concept,
@@ -1157,7 +1157,7 @@ def EditAllScenes(request):
                     'script': scene.script,
                     'story_context': scene.story_context,
                     'story': scene.story_context or scene.script,
-                    'scene_title': scene.title
+                    'title': scene.title
                 })
             checkpoint_state = {
                 "concept": project.concept,
