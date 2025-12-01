@@ -19,9 +19,16 @@ from .main import build_workflow
 from dotenv import load_dotenv
 from .models import WorkflowCheckpoint
 import base64
+import requests
+import time
+from moviepy import VideoFileClip
+from moviepy import concatenate_videoclips
+import io
 import os
-
 load_dotenv()
+
+RUNPOD_API_KEY = os.getenv("RunPod_API_KEY")
+
 ################# Helper Functions #################
 def enforce_character_placeholder(text):
     # Replace "the character's" or "character’s" with "{character}'s"
@@ -29,6 +36,61 @@ def enforce_character_placeholder(text):
     # Replace "the character" or "character" with "{character}"
     text = re.sub(r"\b(the )?character\b", r"{character}", text, flags=re.IGNORECASE)
     return text
+
+def fix_base64(b64_string):
+    missing_padding = len(b64_string) % 4
+    if missing_padding != 0:
+        b64_string += '=' * (4 - missing_padding)
+    return b64_string
+
+def poll_status_and_hit_api(response_id, max_retries=20, delay=5):
+    """
+    Poll the status of the API until it is 'COMPLETED' or a maximum number of retries is reached.
+    """
+    status_url = f"https://api.runpod.ai/v2/ztc333122svqcf/status/{response_id}"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {RUNPOD_API_KEY}"
+    }
+
+    retries = 0
+
+    while retries < max_retries:
+        try:
+            # Check the status
+            status_response = requests.get(status_url, headers=headers)
+            print("DEBUG: API response content:", status_response.text)
+            print("DEBUG: API response status code:", status_response.status_code)
+
+            if status_response.status_code == 200:
+                try:
+                    status_data = status_response.json()
+                except ValueError:
+                    raise Exception("Failed to parse API response as JSON.")
+
+                status = status_data.get("status")
+                print(f"Current status: {status}")
+
+                if status == "COMPLETED":
+                    print("Status is COMPLETED. Returning the final result.")
+                    return status_data  # Return the final result directly
+                elif status in ["FAILED", "CANCELLED"]:
+                    raise Exception(f"Process failed or cancelled with status: {status}")
+                else:
+                    print(f"Status is {status}. Retrying after {delay} seconds...")
+            else:
+                raise Exception(f"Failed to fetch status. HTTP Status Code: {status_response.status_code}")
+
+        except Exception as e:
+            print(f"Error while polling status: {str(e)}")
+            raise
+
+        # Wait before polling again
+        retries += 1
+        time.sleep(delay)
+
+    # If the maximum number of retries is reached
+    raise TimeoutError("Polling timed out before the status became COMPLETED.")
 
 def get_user_selected_character(request):
     """Get the user's selected character trigger_word from session"""
@@ -634,11 +696,20 @@ def edit_image(request):
             
         # Use ComfyUI service to edit the image based on instructions
         # image_prompt =f"Following the story context: {scene.story_context}. Edit the image to reflect: {edit_instructions} in a {style} style."
+        # image_prompt = (
+        #     f"Following the story context: {scene.story_context}. "
+        #     f"Craft the image to reflect: {edit_instructions} and apply the following style: {style}."
+        #     f"Ensure there is no repetition of characters in the frame and there are no hallucinations."
+        # )
+
         image_prompt = (
             f"Following the story context: {scene.story_context}. "
-            f"Edit the image to reflect: {edit_instructions} and apply the following style: {style}."
-            f"Ensure there is only one character in the frame."
+            f"Edit the existing scene to: {edit_instructions}. "
+            f"Render the final image in a {style} visual style. "
+            f"Ensure consistency with previous scene elements, "
+            f"avoid duplicated characters or hallucinations."
         )
+        print(image_prompt)
         image = fetch_image_from_comfy(image_prompt)
         scene.image = f"data:image/png;base64,{base64.b64encode(image).decode('utf-8')}"
         scene.save()
@@ -691,17 +762,25 @@ def edit_all_images(request):
         scenes = models.Scene.objects.filter(project=project)
         edited_scenes = []
         aggregated_context = " ".join([scene.story_context for scene in scenes])
-        aggregated_instructions = (
-            f"Generate visuals in a {style} style. "
-            f"Incorporate the following edits: {edit_instructions}. "
-            f"Base the visuals on the overall story context: {aggregated_context}."
-            f"Ensure there is only one character in the frame."
-        )
+        # aggregated_instructions = (
+        #     f"Generate visuals in a {style} style. "
+        #     f"Incorporate the following edits: {edit_instructions}. "
+        #     f"Base the visuals on the overall story context: {aggregated_context}."
+        #     f"Ensure there is no repetition of characters in the frame and there are no hallucinations."
+        # )
         for scene in scenes:
+            # image_prompt = (
+            #     f"Scene {scene.scene_number}: {scene.title}. "
+            #     f"Story context: {scene.story_context}. "
+            #     f"Edit instructions: {aggregated_instructions}"
+            # )
             image_prompt = (
                 f"Scene {scene.scene_number}: {scene.title}. "
                 f"Story context: {scene.story_context}. "
-                f"Edit instructions: {aggregated_instructions}"
+                f"Modify the image to reflect the following edit instructions: {edit_instructions}. "
+                f"Render this scene in a {style} style. "
+                f"Ensure consistency with the story context: {aggregated_context}. "
+                f"Do not repeat characters or create visual artifacts."
             )
             image = fetch_image_from_comfy(image_prompt)
             scene.image = f"data:image/png;base64,{base64.b64encode(image).decode('utf-8')}"
@@ -727,6 +806,156 @@ def edit_all_images(request):
             "status": "error",
             "message": f"Internal server error: {str(e)}",
             "success": False
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def CreateVideo(request):
+    try:
+        # Parse the request body
+        data = json.loads(request.body)
+        if not data:
+            return Response({
+                "error": "Request body is required",
+                "success": False
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate project_id
+        project_id = data.get('project_id')
+        if not project_id:
+            return Response({
+                "error": "project_id is required",
+                "success": False
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Fetch the project and its scenes
+        try:
+            project = models.Project.objects.get(id=project_id)
+        except models.Project.DoesNotExist:
+            return Response({
+                "error": "Project not found",
+                "success": False
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        scenes = models.Scene.objects.filter(project=project)
+        if not scenes.exists():
+            return Response({
+                "error": "No scenes found for the project",
+                "success": False
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        videos = []
+        for scene in scenes:
+            edit_instruction = scene.image_prompt
+            scene_image = scene.image
+            
+            # Validate and fix the Base64 image
+            if not scene_image.startswith("data:image"):
+                return Response({
+                    "status": "error",
+                    "message": f"Scene {scene.scene_number} has an invalid Base64 image format."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Prepare the request body for the API
+            request_body = {
+                "input": {
+                    "generation_type": "textImage_to_video",
+                    "model": "wan22",
+                    "prompt": edit_instruction,
+                    "input_image": scene_image
+                }
+            }
+            post_api = "https://api.runpod.ai/v2/ztc333122svqcf/run"
+            authorization = RUNPOD_API_KEY
+            
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {authorization}"
+            }
+            
+            # Send the POST request
+            response = requests.post(post_api, data=json.dumps(request_body), headers=headers)
+            
+            # Validate the API response
+            if response.status_code != 200:
+                return Response({
+                    "status": "error",
+                    "message": f"API request failed with status code {response.status_code}: {response.text}"
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            try:
+                response_data = response.json()
+            except ValueError:
+                return Response({
+                    "status": "error",
+                    "message": "Failed to parse API response as JSON."
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            # Extract the response ID
+            response_id = response_data.get("id")
+            if not response_id:
+                return Response({
+                    "status": "error",
+                    "message": "API response does not contain 'id'."
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            
+            # Poll the status and retrieve the final result
+            final_result = poll_status_and_hit_api(response_id)
+            video_url = final_result.get("output", {}).get("video_url", "")
+            if not video_url:
+                return Response({
+                    "status": "error",
+                    "message": "Failed to retrieve video URL from the API response."
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            # Fetch the video and encode it as Base64
+            video_content = requests.get(video_url).content
+            video = base64.b64encode(video_content).decode('utf-8')
+            videos.append({
+                "scene_number": scene.scene_number,
+                "scene_title": scene.title,
+                "video": f"data:video/mp4;base64,{video}"
+            })
+        
+        # Decode base64 videos and create VideoFileClip objects
+        video_clips = []
+        for video_data in videos:
+            video_base64 = video_data["video"].split(",")[1]  # Remove the data URL prefix
+            video_bytes = base64.b64decode(video_base64)
+            video_file = io.BytesIO(video_bytes)
+            video_clip = VideoFileClip(video_file)
+            video_clips.append(video_clip)
+        
+        # Concatenate all video clips
+        final_video = concatenate_videoclips(video_clips, method="compose")
+        
+        # Save the final video to a temporary file
+        temp_video_path = f"/tmp/final_video_{project_id}.mp4"
+        final_video.write_videofile(temp_video_path, codec="libx264")
+        
+        # Encode the final video to base64
+        with open(temp_video_path, "rb") as video_file:
+            final_video_base64 = base64.b64encode(video_file.read()).decode('utf-8')
+        
+        # Save the base64-encoded video to the Project model
+        project.video = f"data:video/mp4;base64,{final_video_base64}"
+        project.save()
+        
+        return Response({
+            "status": "success",
+            "message": "Videos stitched together successfully and saved to the project.",
+            "project_id": str(project.id),
+            "final_video_base64": project.video
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        import traceback
+        print("Exception in CreateVideo:", traceback.format_exc())
+        return Response({
+            "status": "error",
+            "message": f"Internal server error: {str(e)}"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
@@ -763,6 +992,8 @@ def get_project_and_scenes(request):
             "message": f"Internal server error: {str(e)}"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
+        
+
 @api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])

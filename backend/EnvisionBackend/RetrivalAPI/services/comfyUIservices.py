@@ -220,7 +220,7 @@ def fetch_image_from_comfy(prompt):
         ws = create_connection(ws_url, timeout=5000)
         
         workflow = get_prompt_with_workflow(prompt)
-        print(f"DEBUG: Prompt: {prompt[:200]}...")
+        print(f"DEBUG: Prompt: {prompt}...")
         
         images = get_images(ws, workflow)
         

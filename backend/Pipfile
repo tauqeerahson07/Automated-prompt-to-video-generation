@@ -27,6 +27,7 @@ pillow = "*"
 rest-framework-simplejwt = "*"
 whitenoise = "*"
 websocket-client = "*"
+moviepy = "*"
 
 [dev-packages]
 
