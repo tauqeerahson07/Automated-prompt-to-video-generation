@@ -37,12 +37,6 @@ def enforce_character_placeholder(text):
     text = re.sub(r"\b(the )?character\b", r"{character}", text, flags=re.IGNORECASE)
     return text
 
-def fix_base64(b64_string):
-    missing_padding = len(b64_string) % 4
-    if missing_padding != 0:
-        b64_string += '=' * (4 - missing_padding)
-    return b64_string
-
 def poll_status_and_hit_api(response_id, max_retries=20, delay=5):
     """
     Poll the status of the API until it is 'COMPLETED' or a maximum number of retries is reached.
@@ -870,6 +864,8 @@ def CreateVideo(request):
             post_api = "https://api.runpod.ai/v2/ztc333122svqcf/run"
             authorization = RUNPOD_API_KEY
             
+            print(request_body)
+            
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {authorization}"
@@ -904,13 +900,23 @@ def CreateVideo(request):
             
             # Poll the status and retrieve the final result
             final_result = poll_status_and_hit_api(response_id)
-            video_url = final_result.get("output", {}).get("video_url", "")
-            if not video_url:
+            print("DEBUG: Final result from poll_status_and_hit_api:", final_result)
+
+            # Extract the video URL from the output list
+            output_list = final_result.get("output", [])
+            if not output_list or not isinstance(output_list, list):
                 return Response({
                     "status": "error",
                     "message": "Failed to retrieve video URL from the API response."
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
+
+            video_url = output_list[0] if len(output_list) > 0 else None
+            if not video_url:
+                return Response({
+                    "status": "error",
+                    "message": "Video URL is missing in the API response."
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
             # Fetch the video and encode it as Base64
             video_content = requests.get(video_url).content
             video = base64.b64encode(video_content).decode('utf-8')
@@ -921,6 +927,7 @@ def CreateVideo(request):
             })
         
         # Decode base64 videos and create VideoFileClip objects
+        print(f"DEBUG: Stitching together {len(videos)} video clips")
         video_clips = []
         for video_data in videos:
             video_base64 = video_data["video"].split(",")[1]  # Remove the data URL prefix
@@ -950,6 +957,7 @@ def CreateVideo(request):
             "project_id": str(project.id),
             "final_video_base64": project.video
         }, status=status.HTTP_200_OK)
+        
     except Exception as e:
         import traceback
         print("Exception in CreateVideo:", traceback.format_exc())
