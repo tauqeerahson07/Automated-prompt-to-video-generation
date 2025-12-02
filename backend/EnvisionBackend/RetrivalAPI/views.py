@@ -25,11 +25,33 @@ from moviepy import VideoFileClip
 from moviepy import concatenate_videoclips
 import io
 import os
+import tempfile
 load_dotenv()
 
 RUNPOD_API_KEY = os.getenv("RunPod_API_KEY")
 
 ################# Helper Functions #################
+def is_base64(data):
+    try:
+        # Check if the string can be decoded
+        base64.b64decode(data, validate=True)
+        return True
+    except Exception:
+        return False
+def normalize_base64(data_url):
+    # 1) Remove header (data:image/png;base64,)
+    clean = re.sub(r'^data:.*;base64,', '', data_url)
+
+    # 2) Remove whitespace
+    clean = clean.strip().replace('\n', '').replace(' ', '')
+
+    # 3) Fix padding
+    missing = len(clean) % 4
+    if missing:
+        clean += "=" * (4 - missing)
+
+    return clean
+
 def enforce_character_placeholder(text):
     # Replace "the character's" or "character’s" with "{character}'s"
     text = re.sub(r"\b(the )?character[’']s\b", r"{character}'s", text, flags=re.IGNORECASE)
@@ -37,7 +59,7 @@ def enforce_character_placeholder(text):
     text = re.sub(r"\b(the )?character\b", r"{character}", text, flags=re.IGNORECASE)
     return text
 
-def poll_status_and_hit_api(response_id, max_retries=20, delay=5):
+def poll_status_and_hit_api(response_id, max_retries=200, delay=5):
     """
     Poll the status of the API until it is 'COMPLETED' or a maximum number of retries is reached.
     """
@@ -845,12 +867,16 @@ def CreateVideo(request):
             edit_instruction = scene.image_prompt
             scene_image = scene.image
             
-            # Validate and fix the Base64 image
-            if not scene_image.startswith("data:image"):
-                return Response({
-                    "status": "error",
-                    "message": f"Scene {scene.scene_number} has an invalid Base64 image format."
-                }, status=status.HTTP_400_BAD_REQUEST)
+            if is_base64(scene_image) is False:
+                clean_scene_image = normalize_base64(scene_image)
+            
+            # # Validate and fix the Base64 image
+            # if not scene_image.startswith("data:image"):
+            #     return Response({
+            #         "status": "error",
+            #         "message": f"Scene {scene.scene_number} has an invalid Base64 image format."
+            #     }, status=status.HTTP_400_BAD_REQUEST)
+                
             
             # Prepare the request body for the API
             request_body = {
@@ -858,7 +884,7 @@ def CreateVideo(request):
                     "generation_type": "textImage_to_video",
                     "model": "wan22",
                     "prompt": edit_instruction,
-                    "input_image": scene_image
+                    "input_image": clean_scene_image
                 }
             }
             post_api = "https://api.runpod.ai/v2/ztc333122svqcf/run"
@@ -904,12 +930,6 @@ def CreateVideo(request):
 
             # Extract the video URL from the output list
             output_list = final_result.get("output", [])
-            if not output_list or not isinstance(output_list, list):
-                return Response({
-                    "status": "error",
-                    "message": "Failed to retrieve video URL from the API response."
-                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
             video_url = output_list[0] if len(output_list) > 0 else None
             if not video_url:
                 return Response({
@@ -917,39 +937,34 @@ def CreateVideo(request):
                     "message": "Video URL is missing in the API response."
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            # Fetch the video and encode it as Base64
+            # Download the video from the URL
             video_content = requests.get(video_url).content
-            video = base64.b64encode(video_content).decode('utf-8')
-            videos.append({
-                "scene_number": scene.scene_number,
-                "scene_title": scene.title,
-                "video": f"data:video/mp4;base64,{video}"
-            })
-        
-        # Decode base64 videos and create VideoFileClip objects
-        print(f"DEBUG: Stitching together {len(videos)} video clips")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video_file:
+                temp_video_file.write(video_content)
+                temp_video_file.flush()
+                videos.append(temp_video_file.name)
+            
+        # Stitch videos together using moviepy
         video_clips = []
-        for video_data in videos:
-            video_base64 = video_data["video"].split(",")[1]  # Remove the data URL prefix
-            video_bytes = base64.b64decode(video_base64)
-            video_file = io.BytesIO(video_bytes)
-            video_clip = VideoFileClip(video_file)
+        for video_path in videos:
+            video_clip = VideoFileClip(video_path)
             video_clips.append(video_clip)
         
-        # Concatenate all video clips
         final_video = concatenate_videoclips(video_clips, method="compose")
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_video_file:
+            final_video.write_videofile(temp_video_file.name, codec="libx264", audio_codec="aac")
+            temp_video_file.seek(0)
+            final_video_data = temp_video_file.read()
         
-        # Save the final video to a temporary file
-        temp_video_path = f"/tmp/final_video_{project_id}.mp4"
-        final_video.write_videofile(temp_video_path, codec="libx264")
-        
-        # Encode the final video to base64
-        with open(temp_video_path, "rb") as video_file:
-            final_video_base64 = base64.b64encode(video_file.read()).decode('utf-8')
-        
-        # Save the base64-encoded video to the Project model
+        final_video_base64 = base64.b64encode(final_video_data).decode('utf-8')
         project.video = f"data:video/mp4;base64,{final_video_base64}"
         project.save()
+        
+        # Clean up temporary video clips and files
+        for clip in video_clips:
+            clip.close()
+        for video_path in videos:
+            os.unlink(video_path)
         
         return Response({
             "status": "success",
@@ -957,13 +972,11 @@ def CreateVideo(request):
             "project_id": str(project.id),
             "final_video_base64": project.video
         }, status=status.HTTP_200_OK)
-        
     except Exception as e:
-        import traceback
-        print("Exception in CreateVideo:", traceback.format_exc())
         return Response({
             "status": "error",
-            "message": f"Internal server error: {str(e)}"
+            "message": f"Internal server error: {str(e)}",
+            "success": False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
