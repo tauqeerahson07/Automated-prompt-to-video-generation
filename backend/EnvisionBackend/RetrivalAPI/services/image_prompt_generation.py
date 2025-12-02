@@ -374,3 +374,95 @@ Create a complete, cinematic image prompt that includes all styling elements nat
         ]
         
         return ", ".join(negative_elements)
+    
+    
+def CreateVideoPrompt(image_prompt: str) -> str:
+    """
+    Converts an image-style prompt into a detailed, cinematic video prompt.
+    Adds camera motion, angles, lighting, pacing, and environmental dynamics.
+    """
+
+    base = image_prompt.strip()
+    # System prompt for video prompt generation
+    system_prompt = """You are an expert AI video prompt engineer specializing in creating detailed, cinematic prompts for high-quality video generation.
+
+Your task: Transform image-style prompts into comprehensive video generation prompts.
+
+STYLING GUIDELINES - Always incorporate these elements:
+- Cinematic motion and transitions (slow pans, zoom-ins, dynamic angles, etc.)
+- Lighting and environmental dynamics (shifting light, moving shadows, etc.)
+- Camera movements (tracking shots, aerial views, close-ups, etc.)
+- Temporal pacing (slow motion, time-lapse, real-time, etc.)
+- Atmospheric and mood descriptors (immersive, dramatic, serene, etc.)
+- High-quality video modifiers (4K/8K resolution, HDR, professional cinematography)
+
+RULES:
+1. Create detailed, visual descriptions suitable for AI video generation.
+2. Include motion, transitions, lighting, and environmental dynamics.
+3. Focus on what can be visually seen and how it evolves over time.
+4. Add cinematic and technical terms for better quality.
+5. Always include quality and style modifiers naturally within the description.
+
+IMPORTANT: Return ONLY the detailed video prompt text with integrated styling - no JSON, no explanations, no formatting, just the complete cinematic prompt."""
+
+    # Generation prompt
+    generation_prompt = f"""Transform this image-style prompt into a detailed, cinematic video generation prompt:
+
+Image Prompt: {base}
+
+Requirements:
+- Add motion and transitions (e.g., slow pans, zoom-ins, dynamic angles).
+- Include lighting and environmental dynamics (e.g., shifting light, moving shadows).
+- Describe camera movements (e.g., tracking shots, aerial views, close-ups).
+- Specify temporal pacing (e.g., slow motion, time-lapse, real-time).
+- Add atmospheric and mood descriptors.
+- Integrate high-quality video modifiers (e.g., 4K/8K resolution, HDR, professional cinematography).
+
+Create a complete, cinematic video prompt that includes all these elements naturally integrated into the description."""
+
+    headers = {
+        "Authorization": f"Bearer {NEBIUS_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": LLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": generation_prompt}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 1000
+    }
+
+    response = requests.post(
+        f"{NEBIUS_API_BASE}/chat/completions",
+        headers=headers,
+        json=payload,
+    )
+
+    if response.status_code == 200:
+        result = response.json()
+        llm_response = result["choices"][0]["message"]["content"].strip()
+        
+        # Clean up any unwanted formatting
+        llm_response = re.sub(r'```json.*?```', '', llm_response, flags=re.DOTALL)
+        llm_response = re.sub(r'```.*?```', '', llm_response, flags=re.DOTALL)
+        llm_response = re.sub(r'Here is.*?prompt:', '', llm_response, flags=re.IGNORECASE)
+        llm_response = re.sub(r'This prompt.*$', '', llm_response, flags=re.DOTALL)
+        
+        # Remove quotes and escape characters
+        llm_response = llm_response.strip('"\'')
+        llm_response = llm_response.replace('\\"', '"').replace("\\'", "'")
+        llm_response = llm_response.replace('\\n', ' ').replace('\\t', ' ').replace('\\r', ' ')
+        llm_response = llm_response.replace('\\\\', '\\')
+        
+        # Clean up extra whitespace
+        llm_response = ' '.join(llm_response.split())
+        
+        final_video_prompt = llm_response if llm_response else f"{base}, cinematic motion, high quality, dynamic lighting, professional cinematography, 8K resolution"
+        
+        return final_video_prompt
+    else:
+        # Fallback in case of an error
+        return f"{base}, cinematic motion, high quality, dynamic lighting, professional cinematography, 8K resolution"

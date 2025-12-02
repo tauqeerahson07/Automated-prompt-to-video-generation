@@ -13,7 +13,7 @@ import re
 from .services.checkpoints import checkpointer
 from . import models, serializers
 from .services.script_generation import detect_project_type
-from .services.image_prompt_generation import ImagePromptGenerator
+from .services.image_prompt_generation import ImagePromptGenerator,CreateVideoPrompt
 from .services.comfyUIservices import fetch_image_from_comfy
 from .main import build_workflow
 from dotenv import load_dotenv
@@ -865,6 +865,7 @@ def CreateVideo(request):
         videos = []
         for scene in scenes:
             edit_instruction = scene.image_prompt
+            modified_edit_instruction = CreateVideoPrompt(edit_instruction)
             scene_image = scene.image
             
             if is_base64(scene_image) is False:
@@ -883,7 +884,7 @@ def CreateVideo(request):
                 "input": {
                     "generation_type": "textImage_to_video",
                     "model": "wan22",
-                    "prompt": edit_instruction,
+                    "prompt": modified_edit_instruction,
                     "input_image": clean_scene_image
                 }
             }
