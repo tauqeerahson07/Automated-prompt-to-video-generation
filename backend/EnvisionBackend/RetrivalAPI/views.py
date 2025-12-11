@@ -15,6 +15,7 @@ from . import models, serializers
 from .services.script_generation import detect_project_type
 from .services.image_prompt_generation import ImagePromptGenerator,CreateVideoPrompt
 from .services.comfyUIservices import fetch_image_from_comfy
+from .services.video_generator import VideoGenerator
 from .main import build_workflow
 from dotenv import load_dotenv
 from .models import WorkflowCheckpoint
@@ -49,6 +50,12 @@ def normalize_base64(data_url):
     missing = len(clean) % 4
     if missing:
         clean += "=" * (4 - missing)
+
+    # 4) Validate Base64 string
+    try:
+        base64.b64decode(clean, validate=True)
+    except Exception as e:
+        raise ValueError(f"Invalid Base64 string: {str(e)}")
 
     return clean
 
@@ -908,6 +915,96 @@ def CreateVideo(request):
             "success": False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+@api_view(['POST'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def CreateVideo_2(request):
+    try:
+        # Parse the request body
+        data = json.loads(request.body)
+        if not data:
+            return Response({
+                "error": "Request body is required",
+                "success": False
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate project_id
+        project_id = data.get('project_id')
+        if not project_id:
+            return Response({
+                "error": "project_id is required",
+                "success": False
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Fetch the project and its scenes
+        try:
+            project = models.Project.objects.get(id=project_id)
+        except models.Project.DoesNotExist:
+            return Response({
+                "error": "Project not found",
+                "success": False
+            }, status=status.HTTP_404_NOT_FOUND)
+        scenes = models.Scene.objects.filter(project=project)
+        if not scenes.exists():
+            return Response({
+                "error": "No scenes found for the project",
+                "success": False
+            }, status=status.HTTP_404_NOT_FOUND)
+        videos = []
+        video_generator = VideoGenerator()
+        for scene in scenes:
+            edit_instruction = scene.image_prompt
+            modified_edit_instruction = CreateVideoPrompt(edit_instruction)
+            scene_image = scene.image
+            clean_scene_image = normalize_base64(scene_image)
+            video_data = video_generator.generate_video(modified_edit_instruction, clean_scene_image)
+            videos.append(video_data)
+        # Stitch videos together using moviepy
+        print("DEBUG: Stitching videos together...")    
+        video_clips = []
+        for video_data in videos:
+            # Normalize Base64 string to ensure proper padding
+            video_data = normalize_base64(video_data)
+
+            # Validate the Base64 string
+            if not is_base64(video_data):
+                raise ValueError("Invalid Base64 video data.")
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video_file:
+                # Decode Base64 string to bytes before writing
+                temp_video_file.write(base64.b64decode(video_data))
+                temp_video_file.flush()
+                video_clip = VideoFileClip(temp_video_file.name)
+                video_clips.append(video_clip)
+                
+        print("DEBUG: Concatenating video clips...")
+        final_video = concatenate_videoclips(video_clips, method="compose")
+        print("DEBUG: Writing final video to temporary file...")
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_video_file:
+            final_video.write_videofile(temp_video_file.name, codec="libx264", audio_codec="aac")
+            temp_video_file.seek(0)
+            final_video_data = temp_video_file.read()
+        final_video_base64 = base64.b64encode(final_video_data).decode('utf-8')
+        project.video = f"data:video/mp4;base64,{final_video_base64}"
+        project.save()
+        # Clean up temporary video clips and files
+        for clip in video_clips:
+            clip.close()
+        return Response({
+            "status": "success",
+            "message": "Videos stitched together successfully and saved to the project.",
+            "project_id": str(project.id),
+            "final_video_base64": project.video
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            "status": "error",
+            "message": f"Internal server error: {str(e)}",
+            "success": False
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 @api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])

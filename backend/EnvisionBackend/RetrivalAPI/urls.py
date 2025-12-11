@@ -25,7 +25,7 @@ urlpatterns = [
     path('edit-all-images/', views.edit_all_images, name='edit_all_images'),
     
     # Generate video endpoint
-    path('generate-video/', views.CreateVideo, name='generate_video'),
+    path('generate-video/', views.CreateVideo_2, name='generate_video'),
     # Project status endpoint
     path('project-status/<uuid:project_id>/', views.GetProjectStatus,name='project_status'),
     

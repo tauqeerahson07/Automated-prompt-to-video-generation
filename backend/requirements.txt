@@ -17,3 +17,4 @@ Pillow==10.4.0
 Setuptools<81
 psycopg2-binary~=2.9.9
 websocket-client
+replicate
