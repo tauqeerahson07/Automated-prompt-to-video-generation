@@ -76,7 +76,8 @@ class Scene(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     image_prompt = models.TextField(blank=True)
     image = models.TextField(blank=True)  # Stores base64
-
+    # sec_image = models.TextField(blank=True)  # Stores base64 -->temporary
+    
     class Meta:
         ordering = ['scene_number']
         unique_together = ['project', 'scene_number']

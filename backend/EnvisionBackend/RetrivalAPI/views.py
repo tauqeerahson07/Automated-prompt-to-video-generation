@@ -535,6 +535,12 @@ def generate_images(request):
                 
                 # Save the generated image as base64 in the database
                 scene.image = f"data:image/png;base64,{base64.b64encode(image_data).decode('utf-8')}"
+                
+                # sec_image_prompt = f"{scene.image_prompt} make an image prompt of the closing scene using this image prompt"
+                # sec_image_data = fetch_image_from_comfy(sec_image_prompt)
+                
+                # scene.sec_image = f"data:image/png;base64,{base64.b64encode(sec_image_data).decode('utf-8')}"
+                
                 scene.save()
                 
                 # Add scene data to the response
@@ -626,9 +632,18 @@ def edit_image(request):
             f"Ensure consistency with previous scene elements, "
             f"avoid duplicated characters or hallucinations."
         )
+        # sec_image_prompt = (
+        #     f"Following the story context: {scene.story_context}. "
+        #     f"Edit the existing scene to: {edit_instructions}. "
+        #     f"Create a closing scene image in a {style} visual style. "
+        #     f"Ensure consistency with previous scene elements, "
+        #     f"avoid duplicated characters or hallucinations."
+        # )
         print(image_prompt)
         image = fetch_image_from_comfy(image_prompt)
         scene.image = f"data:image/png;base64,{base64.b64encode(image).decode('utf-8')}"
+        # sec_image = fetch_image_from_comfy(sec_image_prompt)
+        # scene.sec_image = f"data:image/png;base64,{base64.b64encode(sec_image).decode('utf-8')}"
         scene.save()
         return Response({
             "status": "success",
@@ -699,8 +714,20 @@ def edit_all_images(request):
                 f"Ensure consistency with the story context: {aggregated_context}. "
                 f"Do not repeat characters or create visual artifacts."
             )
+            
+            # sec_image_prompt = (
+            #     f"Scene {scene.scene_number}: {scene.title}. "
+            #     f"Story context: {scene.story_context}. "
+            #     f"Create a closing scene image reflecting the following edit instructions: {edit_instructions}."
+            #     f"Render this scene in a {style} style. "
+            #     f"Ensure consistency with the story context: {aggregated_context}. "
+            #     f"Do not repeat characters or create visual artifacts."
+            # )
+    
             image = fetch_image_from_comfy(image_prompt)
             scene.image = f"data:image/png;base64,{base64.b64encode(image).decode('utf-8')}"
+            # sec_image = fetch_image_from_comfy(sec_image_prompt)
+            # scene.sec_image = f"data:image/png;base64,{base64.b64encode(sec_image).decode('utf-8')}"
             scene.save()
             edited_scenes.append({
                 "scene_number": scene.scene_number,
