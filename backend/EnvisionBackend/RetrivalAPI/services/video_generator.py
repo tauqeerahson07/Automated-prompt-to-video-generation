@@ -25,7 +25,7 @@ class VideoGenerator:
             ref_image = f"data:image/png;base64,{ref_image}"
         
         input = {
-            'prompt': prompt + ", high quality, no skew, no distortion, realistic, detailed, cinematic lighting",
+            'prompt': prompt + ", high quality, no skew, no distortion, detailed, cinematic lighting",
             "starting_image": ref_image,
             # 'image': ref_image,
             # 'duration': 3,
